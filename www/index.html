@@ -73,6 +73,7 @@
   <input type="password" id="keyInput" placeholder="Gemini API açarı (AIza...)" autocomplete="off">
   <input type="text" id="modelInput" placeholder="Model (məs: gemini-2.5-flash-lite)">
   <label><input type="checkbox" id="aiOn"> Səs əmrlərini Gemini ilə təhlil et</label>
+  <label><input type="checkbox" id="aiAudio"> Səsi birbaşa Gemini-yə göndər (daha dəqiq)</label>
   <div class="ai">Açarı <b>aistudio.google.com/apikey</b> ünvanından pulsuz ala bilərsiniz. Açar yalnız bu telefonda saxlanılır.</div>
   <div class="row"><button id="aiTest">Yoxla</button><button class="primary" id="aiSave">Yadda saxla</button></div>
   <button id="aiClose" style="background:#475569">Bağla</button>
@@ -205,11 +206,12 @@
   // ---------- Gemini ----------
   var DEFAULT_MODEL = 'gemini-2.5-flash-lite';
   var GEMINI_TIMEOUT = 5000;
-  var cfg = { key: '', model: DEFAULT_MODEL, on: false };
+  var cfg = { key: '', model: DEFAULT_MODEL, on: false, audio: true };
   try {
     cfg.key = localStorage.getItem('gem_key') || '';
     cfg.model = localStorage.getItem('gem_model') || DEFAULT_MODEL;
     cfg.on = localStorage.getItem('gem_on') === '1';
+    cfg.audio = localStorage.getItem('gem_audio') !== '0';
   } catch (e) {}
   function geminiActive() { return cfg.on && !!cfg.key; }
   function updateAiState() {
@@ -218,11 +220,11 @@
 
   var SYSTEM_PROMPT =
     'Sən Azərbaycan dilində səslə idarə olunan robot maşının əmr tərcüməçisisən. ' +
-    'Sənə telefonun səs tanıma sisteminin eşitdiyi bir neçə mümkün mətn variantı verilir (ən ehtimallısı birincidir). ' +
+    'Sənə ya səs yazısı (audio), ya da telefonun səs tanıma sisteminin eşitdiyi bir neçə mümkün mətn variantı verilir (ən ehtimallısı birincidir). Audio verilibsə, onu özün dinlə və Azərbaycan dilində nə dediyini müəyyən et. ' +
     'Bu mətnlər tez-tez səhv eşidilir (fonetik oxşarlıq, Azərbaycan/Türk dili qarışıqlığı). ' +
     'Məqsəd: istifadəçinin həqiqətən nə demək istədiyini kontekstə görə təxmin edib, bu əmrlərdən YALNIZ BİRİNİ qaytarmaqdır:\n' +
-    'F = irəli (irəli, ireli, qabağa, düz get, ileri, forward)\n' +
-    'B = geri (geri, geri dön, geriyə, arxaya, geri get, gəlir, gəl, gel, gele, keri, gere, geride, back, reverse). ' +
+    'F = irəli (irəli, irəli get, irəget, ireget, qabağa, düz get, ileri, forward)\n' +
+    'B = geri (geri, geri get, geri dön, geriyə, arxaya, geri get, gəlir, gəl, gel, gele, keri, gere, geride, back, reverse). ' +
     'Diqqət: robot üçün "gəl", "gəlir", "gel", "geri dön" kimi ifadələr səs tanımanın "geri" sözünü səhv eşitməsidir və B sayılır.\n' +
     'L = sola (sola, sol, sol tərəfə, sola dön, left)\n' +
     'S = dayan (dayan, dayandır, stop, sakit, bəs, saxla, kifayət)\n' +
@@ -231,21 +233,23 @@
     'Qaydalar: yalnız JSON qaytar. Əmin deyilsənsə və variantlar arasında yalnız biri əmrə bənzəyirsə, onu seç. ' +
     'Əmr sözü olmayan söhbəti (məs: "salam necəsən") NONE say. Əgər həm "dayan", həm başqa əmr varsa, S seç.';
 
-  function askGemini(matches) {
+  function callGemini(parts) {
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, GEMINI_TIMEOUT);
-    var list = matches.map(function (m, i) { return (i + 1) + '. ' + m; }).join('\n');
     var body = {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: 'user', parts: [{ text: 'Eşidilən variantlar:\n' + list }] }],
+      contents: [{ role: 'user', parts: parts }],
       generationConfig: {
         temperature: 0,
-        maxOutputTokens: 40,
+        maxOutputTokens: 80,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
-          properties: { command: { type: 'STRING', enum: ['F', 'B', 'L', 'R', 'S', 'NONE'] } },
-          required: ['command']
+          properties: {
+            heard: { type: 'STRING' },
+            command: { type: 'STRING', enum: ['F', 'B', 'L', 'R', 'S', 'NONE'] }
+          },
+          required: ['heard', 'command']
         },
         thinkingConfig: { thinkingBudget: 0 }
       }
@@ -268,10 +272,107 @@
               j.candidates[0].content.parts && j.candidates[0].content.parts[0] &&
               j.candidates[0].content.parts[0].text;
       if (!t) throw new Error('Boş cavab');
-      var c = JSON.parse(t.replace(/```json|```/g, '').trim()).command;
-      if (['F', 'B', 'L', 'R', 'S', 'NONE'].indexOf(c) === -1) throw new Error('Yanlış əmr: ' + c);
-      return c;
+      var o = JSON.parse(t.replace(/```json|```/g, '').trim());
+      if (['F', 'B', 'L', 'R', 'S', 'NONE'].indexOf(o.command) === -1) throw new Error('Yanlış əmr: ' + o.command);
+      return { command: o.command, heard: o.heard || '' };
     }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  function askGemini(matches) {
+    var list = matches.map(function (m, i) { return (i + 1) + '. ' + m; }).join('\n');
+    return callGemini([{ text: 'Eşidilən variantlar:\n' + list }]).then(function (r) { return r.command; });
+  }
+
+  // ---------- Birbaşa audio (Gemini səsi özü dinləyir) ----------
+  var aCtx = null, aStream = null, aProc = null, aSrc = null;
+  var audioRunning = false;
+
+  function downsample(buf, from, to) {
+    if (from <= to) return buf;
+    var ratio = from / to, n = Math.floor(buf.length / ratio), out = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var st = Math.floor(i * ratio), en = Math.min(buf.length, Math.floor((i + 1) * ratio)), sum = 0;
+      for (var j = st; j < en; j++) sum += buf[j];
+      out[i] = sum / Math.max(1, en - st);
+    }
+    return out;
+  }
+  function toWavBase64(f32, sr) {
+    var len = f32.length, buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
+    function w(o, str) { for (var i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); }
+    w(0, 'RIFF'); v.setUint32(4, 36 + len * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, len * 2, true);
+    for (var i = 0; i < len; i++) {
+      var x = Math.max(-1, Math.min(1, f32[i]));
+      v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+    }
+    var bytes = new Uint8Array(buf), bin = '';
+    for (var k = 0; k < bytes.length; k += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
+    return btoa(bin);
+  }
+
+  function sendAudio(chunks, sr) {
+    var total = 0, i; for (i = 0; i < chunks.length; i++) total += chunks[i].length;
+    var all = new Float32Array(total), off = 0;
+    for (i = 0; i < chunks.length; i++) { all.set(chunks[i], off); off += chunks[i].length; }
+    var b64 = toWavBase64(downsample(all, sr, 16000), Math.min(sr, 16000));
+    var mySeq = ++seq;
+    lastVoice.textContent = '…';
+    callGemini([{ text: 'Səs yazısı:' }, { inlineData: { mimeType: 'audio/wav', data: b64 } }]).then(function (r) {
+      lastVoice.textContent = r.heard || '—';
+      if (mySeq < appliedSeq) return;
+      appliedSeq = mySeq;
+      if (r.command !== 'NONE') send(r.command); else note('Əmr anlaşılmadı: ' + (r.heard || ''));
+    }, function (e) {
+      lastVoice.textContent = '—';
+      note('Gemini xətası: ' + (e && e.name === 'AbortError' ? 'vaxt bitdi' : (e && e.message || e)));
+    });
+  }
+
+  function startAudioVoice() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { return false; }
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    .then(function (stream) {
+      aStream = stream;
+      aCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (aCtx.resume) aCtx.resume();
+      aSrc = aCtx.createMediaStreamSource(stream);
+      aProc = aCtx.createScriptProcessor(4096, 1, 1);
+      aSrc.connect(aProc); aProc.connect(aCtx.destination);
+      var sr = aCtx.sampleRate, chunkMs = 4096 / sr * 1000;
+      var noise = 0.005, rec = false, pre = [], cur = [], speechMs = 0, silentMs = 0, totalMs = 0;
+      aProc.onaudioprocess = function (e) {
+        if (!audioRunning) return;
+        var d = e.inputBuffer.getChannelData(0), c = new Float32Array(d), sum = 0, i;
+        for (i = 0; i < c.length; i++) sum += c[i] * c[i];
+        var rms = Math.sqrt(sum / c.length), thr = Math.max(0.02, noise * 3.5);
+        if (!rec) {
+          noise = noise * 0.95 + rms * 0.05;
+          pre.push(c); if (pre.length > 3) pre.shift();
+          if (rms > thr) { rec = true; cur = pre.slice(); pre = []; speechMs = chunkMs; silentMs = 0; totalMs = cur.length * chunkMs; }
+        } else {
+          cur.push(c); totalMs += chunkMs;
+          if (rms > thr) { speechMs += chunkMs; silentMs = 0; } else silentMs += chunkMs;
+          if (silentMs > 600 || totalMs > 4000) {
+            rec = false;
+            if (speechMs >= 200) sendAudio(cur, sr);
+            cur = []; speechMs = 0; silentMs = 0;
+          }
+        }
+      };
+      audioRunning = true; voiceOn = true; updateVoiceBtn(); note('');
+    }, function (err) { note('Mikrofon açılmadı: ' + (err && err.message || err)); });
+    return true;
+  }
+  function stopAudioVoice() {
+    audioRunning = false;
+    try { if (aProc) { aProc.onaudioprocess = null; aProc.disconnect(); } } catch (e) {}
+    try { if (aSrc) aSrc.disconnect(); } catch (e) {}
+    try { if (aStream) aStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    try { if (aCtx) aCtx.close(); } catch (e) {}
+    aProc = aSrc = aStream = aCtx = null;
   }
 
   var seq = 0, appliedSeq = 0;
@@ -287,105 +388,4 @@
 
     var mySeq = ++seq;
     function apply(cmd, how) {
-      if (mySeq < appliedSeq) return;            // daha yeni əmr artıq icra olunub
-      appliedSeq = mySeq;
-      if (cmd && cmd !== 'NONE') { send(cmd); if (how) note(how); }
-      else note('Əmr anlaşılmadı: ' + heard);
-    }
-    function local(msg) {
-      var c = null;
-      for (var k = 0; k < matches.length && !c; k++) c = parseVoice(matches[k]);
-      apply(c, msg || '');
-    }
-
-    if (!geminiActive()) { local(''); return; }
-    askGemini(matches).then(function (c) {
-      apply(c, '');
-    }, function (e) {
-      local('Gemini xətası (yerli tanıma işlədi): ' + (e && e.name === 'AbortError' ? 'vaxt bitdi' : (e && e.message || e)));
-    });
-  }
-
-  // ---------- Gemini ayarları ----------
-  function openSettings() {
-    $('keyInput').value = cfg.key; $('modelInput').value = cfg.model; $('aiOn').checked = cfg.on;
-    $('settings').style.display = 'flex';
-  }
-  function readSettings() {
-    cfg.key = $('keyInput').value.trim();
-    cfg.model = $('modelInput').value.trim() || DEFAULT_MODEL;
-    cfg.on = $('aiOn').checked;
-  }
-  $('setBtn').addEventListener('click', openSettings);
-  $('aiClose').addEventListener('click', function () { $('settings').style.display = 'none'; });
-  $('aiSave').addEventListener('click', function () {
-    readSettings();
-    try {
-      localStorage.setItem('gem_key', cfg.key);
-      localStorage.setItem('gem_model', cfg.model);
-      localStorage.setItem('gem_on', cfg.on ? '1' : '0');
-    } catch (e) {}
-    updateAiState(); $('settings').style.display = 'none';
-    note(geminiActive() ? 'Gemini aktivdir' : '');
-  });
-  $('aiTest').addEventListener('click', function () {
-    readSettings();
-    if (!cfg.key) { note('Əvvəlcə API açarını daxil edin'); return; }
-    note('Gemini yoxlanılır...');
-    askGemini(['gelir', 'gel', 'geri dön']).then(function (c) {
-      note(c === 'B' ? '✅ Gemini işləyir ("gelir" → geri)' : 'Gemini cavab verdi, lakin gözlənilməz nəticə: ' + c);
-    }, function (e) { note('❌ Gemini xətası: ' + (e && e.message || e)); });
-  });
-  updateAiState();
-
-  function listenLoop() {
-    if (!voiceOn) return;
-    var sr = window.plugins && window.plugins.speechRecognition;
-    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); voiceOn = false; updateVoiceBtn(); return; }
-    sr.startListening(function (matches) {
-      errCount = 0;
-      handleMatches(matches || []);
-      setTimeout(listenLoop, 200);
-    }, function (err) {
-      errCount++;
-      if (errCount >= 4 && LANG === 'az-AZ') {
-        LANG = 'tr-TR'; errCount = 0;
-        note('az-AZ dəstəklənmir, tr-TR ilə davam edir');
-      }
-      setTimeout(listenLoop, 500);
-    }, { language: LANG, matches: 8, showPopup: false, showPartial: false });
-  }
-
-  function startVoice() {
-    var sr = window.plugins && window.plugins.speechRecognition;
-    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); return; }
-    sr.requestPermission(function () {
-      voiceOn = true; errCount = 0; updateVoiceBtn(); note(''); listenLoop();
-    }, function () { note('Mikrofon icazəsi verilməyib'); });
-  }
-  function stopVoice() {
-    voiceOn = false; updateVoiceBtn();
-    try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
-  }
-  function updateVoiceBtn() {
-    voiceBtn.classList.toggle('on', voiceOn);
-    voiceBtn.textContent = voiceOn ? '🎤 Səs idarəsi: Dinləyir...' : '🎤 Səs idarəsi: Söndürülüb';
-  }
-  voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
-
-  // ---------- Init ----------
-  document.addEventListener('deviceready', function () {
-    BT = window.bluetoothClassicSerial || null;
-    if (!BT) note('Bluetooth plugin yüklənməyib');
-    askPermissions(function () {});
-  }, false);
-
-  document.addEventListener('pause', function () { if (connected) send('S'); }, false);
-
-  setTimeout(function () {
-    if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
-  }, 1500);
-})();
-</script>
-</body>
-</html>
+      if (mySeq < applied
