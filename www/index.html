@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: gap:;">
+<title>Robot Pultu</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --ok:#22c55e; --bad:#ef4444; --stop:#dc2626; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .app { max-width:480px; margin:0 auto; height:100%; display:flex; flex-direction:column; gap:12px; padding:calc(12px + env(safe-area-inset-top)) 14px calc(12px + env(safe-area-inset-bottom)); }
+  h1 { font-size:18px; margin:0; text-align:center; }
+  .card { background:var(--card); border-radius:14px; padding:12px; }
+  .status { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:14px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--bad); margin-right:6px; }
+  .dot.on { background:var(--ok); }
+  button { font:inherit; color:var(--text); border:0; border-radius:12px; background:#334155; padding:12px; font-size:16px; }
+  button.primary { background:var(--accent); }
+  button.voice.on { background:var(--ok); }
+  .info { font-size:13px; color:var(--muted); display:flex; justify-content:space-between; margin-top:8px; gap:8px; }
+  .info b { color:var(--text); }
+  .pad { flex:1; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:10px; min-height:230px; }
+  .pad button { font-size:17px; font-weight:600; }
+  .pad button.active { background:var(--accent); }
+  #bF{grid-area:1/2} #bL{grid-area:2/1} #bS{grid-area:2/2;background:var(--stop)} #bR{grid-area:2/3} #bB{grid-area:3/2}
+  #bS.active { background:#ff6b6b; }
+  .note { font-size:12px; color:var(--muted); text-align:center; min-height:30px; }
+  #picker { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:20px; }
+  #picker .box { background:var(--card); border-radius:14px; padding:14px; width:100%; max-width:420px; max-height:80%; overflow:auto; }
+  #picker button { width:100%; margin-top:8px; text-align:left; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🤖 Robot Pultu</h1>
+
+  <div class="card">
+    <div class="status">
+      <span><span class="dot" id="dot"></span><span id="connText">Qoşulmayıb</span></span>
+      <button class="primary" id="connBtn">Bluetooth-a Qoşul</button>
+    </div>
+    <div class="info"><span>Son komanda: <b id="lastCmd">—</b></span><span>Səs: <b id="lastVoice">—</b></span></div>
+  </div>
+
+  <div class="pad">
+    <button id="bF" data-c="F">▲<br>İrəli</button>
+    <button id="bL" data-c="L">◀<br>Sola</button>
+    <button id="bS" data-c="S">■<br>Dayan</button>
+    <button id="bR" data-c="R">▶<br>Sağa</button>
+    <button id="bB" data-c="B">▼<br>Geri</button>
+  </div>
+
+  <div class="card">
+    <button class="voice" id="voiceBtn" style="width:100%">🎤 Səs idarəsi: Söndürülüb</button>
+    <div class="info" style="justify-content:center">irəli · geri · sola · sağa · dayan</div>
+  </div>
+  <div class="note" id="note"></div>
+</div>
+
+<div id="picker"><div class="box"><b>Cihaz seçin</b><div id="pickList"></div><button id="pickCancel" style="text-align:center;background:#475569">Ləğv et</button></div></div>
+
+<script src="cordova.js"></script>
+<script>
+(function () {
+  var SPP = '00001101-0000-1000-8000-00805F9B34FB';
+  var $ = function (id) { return document.getElementById(id); };
+  var dot = $('dot'), connText = $('connText'), connBtn = $('connBtn');
+  var lastCmd = $('lastCmd'), lastVoice = $('lastVoice'), noteEl = $('note'), voiceBtn = $('voiceBtn');
+  var NAMES = { F:'İrəli', B:'Geri', L:'Sola', R:'Sağa', S:'Dayan' };
+  var note = function (t) { noteEl.textContent = t || ''; };
+
+  var BT = null, connected = false, devAddr = null, devName = '';
+  var PERMS = [
+    'android.permission.BLUETOOTH_CONNECT',
+    'android.permission.BLUETOOTH_SCAN',
+    'android.permission.ACCESS_FINE_LOCATION',
+    'android.permission.RECORD_AUDIO'
+  ];
+
+  function setConnected(on, name) {
+    connected = on;
+    dot.classList.toggle('on', on);
+    connText.textContent = on ? 'Qoşulub' + (name ? ': ' + name : '') : 'Qoşulmayıb';
+    connBtn.textContent = on ? 'Ayır' : 'Bluetooth-a Qoşul';
+  }
+
+  function askPermissions(done) {
+    var p = window.cordova && cordova.plugins && cordova.plugins.permissions;
+    if (!p) return done();
+    p.requestPermissions(PERMS, function () { done(); }, function () { done(); });
+  }
+
+  // ---------- Bluetooth (HC-05 / HC-06, classic SPP) ----------
+  function ensureEnabled(ok, fail) {
+    BT.isEnabled(ok, function () { BT.enable(ok, function () { fail('Bluetooth açılmadı'); }); });
+  }
+
+  function showPicker(devices, cb) {
+    var list = $('pickList'); list.innerHTML = '';
+    devices.forEach(function (d) {
+      var b = document.createElement('button');
+      b.textContent = (d.name || 'Adsız') + '  (' + d.address + ')';
+      b.onclick = function () { $('picker').style.display = 'none'; cb(d); };
+      list.appendChild(b);
+    });
+    $('pickCancel').onclick = function () { $('picker').style.display = 'none'; note(''); };
+    $('picker').style.display = 'flex';
+  }
+
+  function doConnect(d) {
+    note('Qoşulur: ' + (d.name || d.address) + ' ...');
+    BT.connect(d.address, [SPP], function () {
+      devAddr = d.address; devName = d.name || d.address;
+      setConnected(true, devName); note('');
+    }, function (err) {
+      var was = connected;
+      setConnected(false); devAddr = null;
+      note(was ? 'Bağlantı kəsildi' : 'Qoşulmaq alınmadı. Robotun işə düşdüyünü və cütləşdiyini yoxlayın. ' + (err || ''));
+    });
+  }
+
+  function connect() {
+    if (!BT) { note('Bluetooth plugin tapılmadı. Tətbiq düzgün qurulmayıb.'); return; }
+    askPermissions(function () {
+      ensureEnabled(function () {
+        BT.list(function (devices) {
+          if (!devices || !devices.length) { note('Cütləşdirilmiş cihaz yoxdur. Telefon ayarlarında HC-05 ilə cütləşin (PIN 1234 / 0000).'); return; }
+          var hc = devices.filter(function (d) { return /hc-?0[56]/i.test(d.name || ''); });
+          if (hc.length === 1) doConnect(hc[0]); else showPicker(devices, doConnect);
+        }, function (e) { note('Cihaz siyahısı alınmadı. Bluetooth icazəsini yoxlayın. ' + (e || '')); });
+      }, note);
+    });
+  }
+
+  function disconnect() {
+    if (BT && devAddr) BT.disconnect(devAddr, SPP, function () {}, function () {});
+    setConnected(false); devAddr = null;
+  }
+
+  connBtn.addEventListener('click', function () { connected ? disconnect() : connect(); });
+
+  function send(c) {
+    lastCmd.textContent = NAMES[c] + ' (' + c + ')';
+    if (!connected || !BT) { note('Əvvəlcə Bluetooth-a qoşulun'); return; }
+    BT.write(devAddr, SPP, c, function () {}, function () { note('Göndərmə xətası'); });
+  }
+
+  // ---------- Manual buttons (hold to move, release to stop) ----------
+  document.querySelectorAll('.pad button').forEach(function (btn) {
+    var c = btn.dataset.c;
+    function down(e) { e.preventDefault(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
+    function up(e) { e.preventDefault(); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') send('S'); } }
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up);
+    btn.addEventListener('pointerleave', up);
+    btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  });
+
+  // ---------- Voice ----------
+  var voiceOn = false, LANG = 'az-AZ', errCount = 0;
+
+  function norm(s) {
+    return s.toLocaleLowerCase('az')
+      .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
+      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ');
+  }
+  var RULES = [
+    ['S', ['dayandir', 'dayan', 'stop', 'sakit']],
+    ['F', ['ireli', 'qabaga', 'qabag']],
+    ['B', ['geri', 'arxaya', 'arxa']],
+    ['L', ['sola', 'sol']],
+    ['R', ['saga', 'sag']]
+  ];
+  function parseVoice(text) {
+    var words = norm(text).split(/\s+/).filter(Boolean);
+    for (var i = words.length - 1; i >= 0; i--)
+      for (var r = 0; r < RULES.length; r++)
+        if (RULES[r][1].indexOf(words[i]) !== -1) return RULES[r][0];
+    return null;
+  }
+  function handleMatches(matches) {
+    var cmd = null, heard = '';
+    for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoice(matches[i]); if (cmd) heard = matches[i]; }
+    if (!heard && matches.length) heard = matches[0];
+    lastVoice.textContent = heard || '—';
+    if (cmd) send(cmd);
+  }
+
+  function listenLoop() {
+    if (!voiceOn) return;
+    var sr = window.plugins && window.plugins.speechRecognition;
+    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); voiceOn = false; updateVoiceBtn(); return; }
+    sr.startListening(function (matches) {
+      errCount = 0;
+      handleMatches(matches || []);
+      setTimeout(listenLoop, 200);
+    }, function (err) {
+      errCount++;
+      if (errCount >= 4 && LANG === 'az-AZ') {
+        LANG = 'tr-TR'; errCount = 0;
+        note('az-AZ dəstəklənmir, tr-TR ilə davam edir');
+      }
+      setTimeout(listenLoop, 500);
+    }, { language: LANG, matches: 5, showPopup: false, showPartial: false });
+  }
+
+  function startVoice() {
+    var sr = window.plugins && window.plugins.speechRecognition;
+    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); return; }
+    sr.requestPermission(function () {
+      voiceOn = true; errCount = 0; updateVoiceBtn(); note(''); listenLoop();
+    }, function () { note('Mikrofon icazəsi verilməyib'); });
+  }
+  function stopVoice() {
+    voiceOn = false; updateVoiceBtn();
+    try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
+  }
+  function updateVoiceBtn() {
+    voiceBtn.classList.toggle('on', voiceOn);
+    voiceBtn.textContent = voiceOn ? '🎤 Səs idarəsi: Dinləyir...' : '🎤 Səs idarəsi: Söndürülüb';
+  }
+  voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
+
+  // ---------- Init ----------
+  document.addEventListener('deviceready', function () {
+    BT = window.bluetoothClassicSerial || null;
+    if (!BT) note('Bluetooth plugin yüklənməyib');
+    askPermissions(function () {});
+  }, false);
+
+  document.addEventListener('pause', function () { if (connected) send('S'); }, false);
+
+  setTimeout(function () {
+    if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
+  }, 1500);
+})();
+</script>
+</body>
+</html>

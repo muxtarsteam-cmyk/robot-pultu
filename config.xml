@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="az.muxtar.robotpultu" version="1.0.0"
+        xmlns="http://www.w3.org/ns/widgets"
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Robot Pultu</name>
+    <description>Bluetooth robot pultu</description>
+    <author email="muxtar.mn85@gmail.com">Muxtar</author>
+    <content src="index.html" />
+
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <access origin="*" />
+
+    <preference name="Orientation" value="portrait" />
+    <preference name="BackgroundColor" value="0xff0f172a" />
+    <preference name="android-minSdkVersion" value="24" />
+    <preference name="android-targetSdkVersion" value="33" />
+    <preference name="AndroidXEnabled" value="true" />
+
+    <plugin name="cordova-plugin-bluetooth-classic-serial-port" />
+    <plugin name="cordova-plugin-speechrecognition" />
+    <plugin name="cordova-plugin-android-permissions" spec="1.1.5" />
+
+    <platform name="android">
+        <config-file target="AndroidManifest.xml" parent="/manifest">
+            <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="28" />
+            <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="34" />
+            <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+            <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+            <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="33" />
+            <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="33" />
+            <uses-permission android:name="android.permission.RECORD_AUDIO" />
+            <queries>
+                <intent>
+                    <action android:name="android.speech.RecognitionService" />
+                </intent>
+                <intent>
+                    <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+                </intent>
+            </queries>
+        </config-file>
+    </platform>
+</widget>
