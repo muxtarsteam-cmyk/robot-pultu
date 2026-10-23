@@ -29,6 +29,12 @@
   #picker { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:20px; }
   #picker .box { background:var(--card); border-radius:14px; padding:14px; width:100%; max-width:420px; max-height:80%; overflow:auto; }
   #picker button { width:100%; margin-top:8px; text-align:left; }
+  #settings { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:20px; }
+  #settings .box { background:var(--card); border-radius:14px; padding:14px; width:100%; max-width:420px; display:flex; flex-direction:column; gap:10px; }
+  #settings input[type=password], #settings input[type=text] { width:100%; padding:12px; border-radius:10px; border:1px solid #475569; background:#0f172a; color:var(--text); font-size:15px; user-select:text; -webkit-user-select:text; }
+  #settings label { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .row { display:flex; gap:8px; } .row button { flex:1; }
+  .ai { font-size:12px; color:var(--muted); text-align:center; }
 </style>
 </head>
 <body>
@@ -54,9 +60,23 @@
   <div class="card">
     <button class="voice" id="voiceBtn" style="width:100%">🎤 Səs idarəsi: Söndürülüb</button>
     <div class="info" style="justify-content:center">irəli · geri · sola · sağa · dayan</div>
+    <div class="info" style="justify-content:space-between;align-items:center">
+      <span id="aiState">🤖 Gemini: söndürülüb</span>
+      <button id="setBtn" style="padding:6px 12px;font-size:13px">⚙ Gemini ayarları</button>
+    </div>
   </div>
   <div class="note" id="note"></div>
 </div>
+
+<div id="settings"><div class="box">
+  <b>Gemini API ayarları</b>
+  <input type="password" id="keyInput" placeholder="Gemini API açarı (AIza...)" autocomplete="off">
+  <input type="text" id="modelInput" placeholder="Model (məs: gemini-2.5-flash-lite)">
+  <label><input type="checkbox" id="aiOn"> Səs əmrlərini Gemini ilə təhlil et</label>
+  <div class="ai">Açarı <b>aistudio.google.com/apikey</b> ünvanından pulsuz ala bilərsiniz. Açar yalnız bu telefonda saxlanılır.</div>
+  <div class="row"><button id="aiTest">Yoxla</button><button class="primary" id="aiSave">Yadda saxla</button></div>
+  <button id="aiClose" style="background:#475569">Bağla</button>
+</div></div>
 
 <div id="picker"><div class="box"><b>Cihaz seçin</b><div id="pickList"></div><button id="pickCancel" style="text-align:center;background:#475569">Ləğv et</button></div></div>
 
@@ -166,10 +186,11 @@
       .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
       .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ');
   }
+  // Yerli (offline ehtiyat) qaydalar. Geri əmri üçün tez-tez yanlış eşidilən variantlar da əlavə olunub.
   var RULES = [
-    ['S', ['dayandir', 'dayan', 'stop', 'sakit']],
-    ['F', ['ireli', 'qabaga', 'qabag']],
-    ['B', ['geri', 'arxaya', 'arxa']],
+    ['S', ['dayandir', 'dayan', 'dayanin', 'stop', 'sakit', 'bes']],
+    ['F', ['ireli', 'irelle', 'qabaga', 'qabag', 'ileri']],
+    ['B', ['geri', 'geriye', 'geride', 'gere', 'keri', 'gelir', 'gel', 'gele', 'geldi', 'gerisin', 'arxaya', 'arxa']],
     ['L', ['sola', 'sol']],
     ['R', ['saga', 'sag']]
   ];
@@ -180,13 +201,142 @@
         if (RULES[r][1].indexOf(words[i]) !== -1) return RULES[r][0];
     return null;
   }
-  function handleMatches(matches) {
-    var cmd = null, heard = '';
-    for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoice(matches[i]); if (cmd) heard = matches[i]; }
-    if (!heard && matches.length) heard = matches[0];
-    lastVoice.textContent = heard || '—';
-    if (cmd) send(cmd);
+
+  // ---------- Gemini ----------
+  var DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+  var GEMINI_TIMEOUT = 5000;
+  var cfg = { key: '', model: DEFAULT_MODEL, on: false };
+  try {
+    cfg.key = localStorage.getItem('gem_key') || '';
+    cfg.model = localStorage.getItem('gem_model') || DEFAULT_MODEL;
+    cfg.on = localStorage.getItem('gem_on') === '1';
+  } catch (e) {}
+  function geminiActive() { return cfg.on && !!cfg.key; }
+  function updateAiState() {
+    $('aiState').textContent = geminiActive() ? '🤖 Gemini: aktiv' : (cfg.on ? '🤖 Gemini: açar yoxdur' : '🤖 Gemini: söndürülüb');
   }
+
+  var SYSTEM_PROMPT =
+    'Sən Azərbaycan dilində səslə idarə olunan robot maşının əmr tərcüməçisisən. ' +
+    'Sənə telefonun səs tanıma sisteminin eşitdiyi bir neçə mümkün mətn variantı verilir (ən ehtimallısı birincidir). ' +
+    'Bu mətnlər tez-tez səhv eşidilir (fonetik oxşarlıq, Azərbaycan/Türk dili qarışıqlığı). ' +
+    'Məqsəd: istifadəçinin həqiqətən nə demək istədiyini kontekstə görə təxmin edib, bu əmrlərdən YALNIZ BİRİNİ qaytarmaqdır:\n' +
+    'F = irəli (irəli, ireli, qabağa, düz get, ileri, forward)\n' +
+    'B = geri (geri, geri dön, geriyə, arxaya, geri get, gəlir, gəl, gel, gele, keri, gere, geride, back, reverse). ' +
+    'Diqqət: robot üçün "gəl", "gəlir", "gel", "geri dön" kimi ifadələr səs tanımanın "geri" sözünü səhv eşitməsidir və B sayılır.\n' +
+    'L = sola (sola, sol, sol tərəfə, sola dön, left)\n' +
+    'S = dayan (dayan, dayandır, stop, sakit, bəs, saxla, kifayət)\n' +
+    'R = sağa (sağa, sağ, sağ tərəfə, sağa dön, right)\n' +
+    'NONE = heç bir əmrə uyğun gəlmir və ya tamamilə aydın deyil.\n' +
+    'Qaydalar: yalnız JSON qaytar. Əmin deyilsənsə və variantlar arasında yalnız biri əmrə bənzəyirsə, onu seç. ' +
+    'Əmr sözü olmayan söhbəti (məs: "salam necəsən") NONE say. Əgər həm "dayan", həm başqa əmr varsa, S seç.';
+
+  function askGemini(matches) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, GEMINI_TIMEOUT);
+    var list = matches.map(function (m, i) { return (i + 1) + '. ' + m; }).join('\n');
+    var body = {
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: 'user', parts: [{ text: 'Eşidilən variantlar:\n' + list }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 40,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: { command: { type: 'STRING', enum: ['F', 'B', 'L', 'R', 'S', 'NONE'] } },
+          required: ['command']
+        },
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    };
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+              encodeURIComponent(cfg.model || DEFAULT_MODEL) + ':generateContent';
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+      body: JSON.stringify(body),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error((j && j.error && j.error.message) || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function (j) {
+      clearTimeout(timer);
+      var t = j && j.candidates && j.candidates[0] && j.candidates[0].content &&
+              j.candidates[0].content.parts && j.candidates[0].content.parts[0] &&
+              j.candidates[0].content.parts[0].text;
+      if (!t) throw new Error('Boş cavab');
+      var c = JSON.parse(t.replace(/```json|```/g, '').trim()).command;
+      if (['F', 'B', 'L', 'R', 'S', 'NONE'].indexOf(c) === -1) throw new Error('Yanlış əmr: ' + c);
+      return c;
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  var seq = 0, appliedSeq = 0;
+  function handleMatches(matches) {
+    if (!matches.length) return;
+    var heard = matches[0];
+    lastVoice.textContent = heard;
+
+    // Təhlükəsizlik: "dayan" yerli olaraq dərhal icra olunur (Gemini-ni gözləmir)
+    for (var i = 0; i < matches.length; i++) {
+      if (parseVoice(matches[i]) === 'S') { appliedSeq = ++seq; send('S'); return; }
+    }
+
+    var mySeq = ++seq;
+    function apply(cmd, how) {
+      if (mySeq < appliedSeq) return;            // daha yeni əmr artıq icra olunub
+      appliedSeq = mySeq;
+      if (cmd && cmd !== 'NONE') { send(cmd); if (how) note(how); }
+      else note('Əmr anlaşılmadı: ' + heard);
+    }
+    function local(msg) {
+      var c = null;
+      for (var k = 0; k < matches.length && !c; k++) c = parseVoice(matches[k]);
+      apply(c, msg || '');
+    }
+
+    if (!geminiActive()) { local(''); return; }
+    askGemini(matches).then(function (c) {
+      apply(c, '');
+    }, function (e) {
+      local('Gemini xətası (yerli tanıma işlədi): ' + (e && e.name === 'AbortError' ? 'vaxt bitdi' : (e && e.message || e)));
+    });
+  }
+
+  // ---------- Gemini ayarları ----------
+  function openSettings() {
+    $('keyInput').value = cfg.key; $('modelInput').value = cfg.model; $('aiOn').checked = cfg.on;
+    $('settings').style.display = 'flex';
+  }
+  function readSettings() {
+    cfg.key = $('keyInput').value.trim();
+    cfg.model = $('modelInput').value.trim() || DEFAULT_MODEL;
+    cfg.on = $('aiOn').checked;
+  }
+  $('setBtn').addEventListener('click', openSettings);
+  $('aiClose').addEventListener('click', function () { $('settings').style.display = 'none'; });
+  $('aiSave').addEventListener('click', function () {
+    readSettings();
+    try {
+      localStorage.setItem('gem_key', cfg.key);
+      localStorage.setItem('gem_model', cfg.model);
+      localStorage.setItem('gem_on', cfg.on ? '1' : '0');
+    } catch (e) {}
+    updateAiState(); $('settings').style.display = 'none';
+    note(geminiActive() ? 'Gemini aktivdir' : '');
+  });
+  $('aiTest').addEventListener('click', function () {
+    readSettings();
+    if (!cfg.key) { note('Əvvəlcə API açarını daxil edin'); return; }
+    note('Gemini yoxlanılır...');
+    askGemini(['gelir', 'gel', 'geri dön']).then(function (c) {
+      note(c === 'B' ? '✅ Gemini işləyir ("gelir" → geri)' : 'Gemini cavab verdi, lakin gözlənilməz nəticə: ' + c);
+    }, function (e) { note('❌ Gemini xətası: ' + (e && e.message || e)); });
+  });
+  updateAiState();
 
   function listenLoop() {
     if (!voiceOn) return;
@@ -203,7 +353,7 @@
         note('az-AZ dəstəklənmir, tr-TR ilə davam edir');
       }
       setTimeout(listenLoop, 500);
-    }, { language: LANG, matches: 5, showPopup: false, showPartial: false });
+    }, { language: LANG, matches: 8, showPopup: false, showPartial: false });
   }
 
   function startVoice() {
