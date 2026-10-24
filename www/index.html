@@ -37,7 +37,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span style="font-size:11px;color:var(--muted)">v3</span></h1>
+  <h1>🤖 Robot Pultu <span style="font-size:11px;color:var(--muted)">v4</span></h1>
 
   <div class="card">
     <div class="status">
@@ -242,6 +242,7 @@
   var PROMPT =
     'Sən robot maşının səs komandası tanıyıcısısan. Səsdə Azərbaycan dilində (bəzən türkcə və ya rusca) komanda var. ' +
     'Komandalar: F = irəli, qabağa, düz get; B = geri, arxaya; L = sola, sola dön; R = sağa, sağa dön; S = dayan, dayandır, stop, saxla. ' +
+    'Əgər bir neçə komanda deyilibsə, YALNIZ SONUNCU komandanı seç. ' +
     'Cavabı YALNIZ bu formatda ver: HƏRF|eşitdiyin söz. Məsələn: F|irəli get. ' +
     'Əgər səsdə komanda yoxdursa, danışıq yoxdursa və ya aydın deyilsə: N|. ' +
     'Başqa heç nə yazma.';
@@ -272,7 +273,7 @@
 
   function handleUtterance(chunks) {
     var all = concat(chunks);
-    var pcm = downsample(all, ctx.sampleRate, 16000);
+    var pcm = downsample(all, curRate, 16000);
     if (pcm.length < 16000 * 0.25) return;      // çox qısa səs-küy
     busy++; updateVoiceBtn('send');
     askGemini(toWav(pcm, 16000)).then(function (txt) {
@@ -280,7 +281,7 @@
       if (!m) { lastVoice.textContent = txt.slice(0, 24) || '—'; return; }
       var c = m[1].toUpperCase(), heard = (m[2] || '').trim();
       lastVoice.textContent = heard || (c === 'N' ? '(komanda yox)' : NAMES[c]);
-      if (c !== 'N') send(c);
+      if (c !== 'N') { send(c); note(''); } else { note('Komanda tanınmadı, yenidən deyin'); }
     }).catch(function (e) {
       note(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
     }).then(function () {
@@ -288,11 +289,17 @@
     });
   }
 
+  var curRate = 16000;
   function onAudio(e) {
+    if (!voiceOn || !ctx) return;
+    processChunk(new Float32Array(e.inputBuffer.getChannelData(0)), ctx.sampleRate);
+  }
+
+  function processChunk(chunk, rate) {
     if (!voiceOn) return;
-    var d = e.inputBuffer.getChannelData(0), chunk = new Float32Array(d);
+    curRate = rate;
     var sum = 0, i; for (i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
-    var rms = Math.sqrt(sum / chunk.length), ms = chunk.length / ctx.sampleRate * 1000;
+    var rms = Math.sqrt(sum / chunk.length), ms = chunk.length / rate * 1000;
     var thr = Math.max(0.025, noise * 3.5);
 
     if (!speaking) {
@@ -322,17 +329,54 @@
     }, function () { cb(true); });
   }
 
+  // ---- Mikrofon üsulu 1: Cordova audioinput plugini (WebView-dan asılı deyil) ----
+  var pluginMic = false;
+  function onPluginAudio(evt) {
+    if (!voiceOn || !evt || !evt.data) return;
+    var d = evt.data, chunk;
+    if (d instanceof Float32Array) chunk = d;
+    else { chunk = new Float32Array(d.length); for (var i = 0; i < d.length; i++) chunk[i] = d[i] / 32767; }
+    processChunk(chunk, evt.sampleRate || 16000);
+  }
+  function startPluginMic() {
+    micPermission(function (ok) {
+      if (!ok) { note('Mikrofon icazəsi YOXDUR. Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver.'); return; }
+      try {
+        window.addEventListener('audioinput', onPluginAudio, false);
+        window.addEventListener('audioinputerror', function (e) { note('Mikrofon xətası: ' + (e && e.message ? e.message : '')); }, false);
+        audioinput.start({
+          sampleRate: 16000, bufferSize: 4096, channels: 1, format: 'PCM_16BIT',
+          normalize: true, normalizationFactor: 32767.0, audioSourceType: 1
+        });
+        pluginMic = true;
+        preRoll = []; speech = []; speaking = false; noise = 0.008;
+        voiceOn = true; updateVoiceBtn('idle'); note('');
+      } catch (e) {
+        window.removeEventListener('audioinput', onPluginAudio, false);
+        note('Mikrofon plugini açılmadı: ' + (e && e.message ? e.message : e));
+      }
+    });
+  }
+
   function startGemini() {
+    if (window.audioinput) { startPluginMic(); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Mikrofon bu mühitdə dəstəklənmir'); return; }
     micPermission(function (ok) {
       if (!ok) { note('Mikrofon icazəsi YOXDUR. Telefon: Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver. Sonra tətbiqi tam bağlayıb yenidən açın.'); return; }
       // Bəzi telefonlar əlavə ayarlarla (səs-küy azaltma) mikrofonu açmır: əvvəl sadə, sonra ayarlı cəhd
       var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-      gum({ audio: true }).catch(function (e1) {
-        return new Promise(function (r) { setTimeout(r, 600); }).then(function () {
-          return gum({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      var tries = 0;
+      function attempt() {
+        tries++;
+        var c = (tries % 2) ? { audio: true } : { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
+        return gum(c).catch(function (e) {
+          if (tries >= 4) throw e;
+          note('Mikrofon cəhdi ' + tries + '/4 ...');
+          return new Promise(function (r) { setTimeout(r, 900); }).then(attempt);
         });
-      }).then(function (st) {
+      }
+      note('Mikrofon açılır...');
+      attempt().then(function (st) {
         stream = st;
         var AC = window.AudioContext || window.webkitAudioContext;
         ctx = new AC();
@@ -348,6 +392,11 @@
     });
   }
   function stopGemini() {
+    if (pluginMic) {
+      pluginMic = false;
+      try { window.removeEventListener('audioinput', onPluginAudio, false); } catch (e) {}
+      try { audioinput.stop(function () {}); } catch (e) {}
+    }
     try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
     try { if (srcNode) srcNode.disconnect(); } catch (e) {}
     try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
@@ -360,71 +409,4 @@
   function norm(s) {
     return s.toLocaleLowerCase('az')
       .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
-      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ');
-  }
-  var RULES = [
-    ['S', ['dayandir', 'dayan', 'stop', 'sakit']],
-    ['F', ['ireli', 'qabaga', 'qabag']],
-    ['B', ['geri', 'arxaya', 'arxa']],
-    ['L', ['sola', 'sol']],
-    ['R', ['saga', 'sag']]
-  ];
-  function parseVoice(text) {
-    var words = norm(text).split(/\s+/).filter(Boolean);
-    for (var i = words.length - 1; i >= 0; i--)
-      for (var r = 0; r < RULES.length; r++)
-        if (RULES[r][1].indexOf(words[i]) !== -1) return RULES[r][0];
-    return null;
-  }
-  function handleMatches(matches) {
-    var cmd = null, heard = '';
-    for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoice(matches[i]); if (cmd) heard = matches[i]; }
-    if (!heard && matches.length) heard = matches[0];
-    lastVoice.textContent = heard || '—';
-    if (cmd) send(cmd);
-  }
-  function listenLoop() {
-    if (!voiceOn || apiKey) return;
-    var sr = window.plugins && window.plugins.speechRecognition;
-    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); voiceOn = false; updateVoiceBtn(); return; }
-    sr.startListening(function (matches) {
-      errCount = 0; handleMatches(matches || []); setTimeout(listenLoop, 200);
-    }, function () {
-      errCount++;
-      if (errCount >= 4 && LANG === 'az-AZ') { LANG = 'tr-TR'; errCount = 0; note('az-AZ dəstəklənmir, tr-TR ilə davam edir'); }
-      setTimeout(listenLoop, 500);
-    }, { language: LANG, matches: 5, showPopup: false, showPartial: false });
-  }
-  function startNative() {
-    var sr = window.plugins && window.plugins.speechRecognition;
-    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); return; }
-    sr.requestPermission(function () {
-      voiceOn = true; errCount = 0; updateVoiceBtn('idle'); note(''); listenLoop();
-    }, function () { note('Mikrofon icazəsi verilməyib'); });
-  }
-
-  // ---------- Ümumi düymə ----------
-  function startVoice() { apiKey ? startGemini() : startNative(); }
-  function stopVoice() {
-    voiceOn = false; updateVoiceBtn();
-    stopGemini();
-    try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
-  }
-  voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
-
-  // ---------- Başlanğıc ----------
-  document.addEventListener('deviceready', function () {
-    BT = window.bluetoothClassicSerial || null;
-    if (!BT) note('Bluetooth plugin yüklənməyib');
-    askPermissions(function () {});
-  }, false);
-
-  document.addEventListener('pause', function () { if (connected) send('S'); if (voiceOn) stopVoice(); }, false);
-
-  setTimeout(function () {
-    if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
-  }, 1500);
-})();
-</script>
-</body>
-</html>
+      .replace(/ğ
