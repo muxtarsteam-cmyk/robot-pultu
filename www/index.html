@@ -37,7 +37,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span style="font-size:11px;color:var(--muted)">v5</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v6</span></h1>
 
   <div class="card">
     <div class="status">
@@ -68,6 +68,7 @@
 
 <div id="picker"><div class="box"><b>Cihaz seçin</b><div id="pickList"></div><button id="pickCancel" style="text-align:center;background:#475569">Ləğv et</button></div></div>
 
+<script>window.onerror=function(m,s,l){var n=document.getElementById("note");if(n)n.textContent="JS xəta: "+m+" (sətir "+l+")";};</script>
 <script src="cordova.js"></script>
 <script>
 (function () {
@@ -409,4 +410,72 @@
   function norm(s) {
     return s.toLocaleLowerCase('az')
       .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
-      .replace(/ğ
+      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ');
+  }
+  var RULES = [
+    ['S', ['dayandir', 'dayan', 'stop', 'sakit']],
+    ['F', ['ireli', 'qabaga', 'qabag']],
+    ['B', ['geri', 'arxaya', 'arxa']],
+    ['L', ['sola', 'sol']],
+    ['R', ['saga', 'sag']]
+  ];
+  function parseVoice(text) {
+    var words = norm(text).split(/\s+/).filter(Boolean);
+    for (var i = words.length - 1; i >= 0; i--)
+      for (var r = 0; r < RULES.length; r++)
+        if (RULES[r][1].indexOf(words[i]) !== -1) return RULES[r][0];
+    return null;
+  }
+  function handleMatches(matches) {
+    var cmd = null, heard = '';
+    for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoice(matches[i]); if (cmd) heard = matches[i]; }
+    if (!heard && matches.length) heard = matches[0];
+    lastVoice.textContent = heard || '—';
+    if (cmd) send(cmd);
+  }
+  function listenLoop() {
+    if (!voiceOn || apiKey) return;
+    var sr = window.plugins && window.plugins.speechRecognition;
+    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); voiceOn = false; updateVoiceBtn(); return; }
+    sr.startListening(function (matches) {
+      errCount = 0; handleMatches(matches || []); setTimeout(listenLoop, 200);
+    }, function () {
+      errCount++;
+      if (errCount >= 4 && LANG === 'az-AZ') { LANG = 'tr-TR'; errCount = 0; note('az-AZ dəstəklənmir, tr-TR ilə davam edir'); }
+      setTimeout(listenLoop, 500);
+    }, { language: LANG, matches: 5, showPopup: false, showPartial: false });
+  }
+  function startNative() {
+    var sr = window.plugins && window.plugins.speechRecognition;
+    if (!sr) { note('Səs tanıma plugin-i tapılmadı'); return; }
+    sr.requestPermission(function () {
+      voiceOn = true; errCount = 0; updateVoiceBtn('idle'); note(''); listenLoop();
+    }, function () { note('Mikrofon icazəsi verilməyib'); });
+  }
+
+  // ---------- Ümumi düymə ----------
+  function startVoice() { apiKey ? startGemini() : startNative(); }
+  function stopVoice() {
+    voiceOn = false; updateVoiceBtn();
+    stopGemini();
+    try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
+  }
+  voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
+
+  // ---------- Başlanğıc ----------
+  document.addEventListener('deviceready', function () {
+    BT = window.bluetoothClassicSerial || null;
+    if (!BT) note('Bluetooth plugin yüklənməyib');
+    askPermissions(function () {});
+  }, false);
+
+  document.addEventListener('pause', function () { if (connected) send('S'); if (voiceOn) stopVoice(); }, false);
+
+  setTimeout(function () {
+    if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
+  }, 1500);
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v6 ✓';
+})();
+</script>
+</body>
+</html>
