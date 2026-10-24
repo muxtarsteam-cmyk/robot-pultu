@@ -314,7 +314,13 @@
   function startGemini() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Mikrofon bu mühitdə dəstəklənmir'); return; }
     askPermissions(function () {
-      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(function (st) {
+      // Bəzi telefonlar əlavə ayarlarla (səs-küy azaltma) mikrofonu açmır: əvvəl sadə, sonra ayarlı cəhd
+      var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      gum({ audio: true }).catch(function (e1) {
+        return new Promise(function (r) { setTimeout(r, 600); }).then(function () {
+          return gum({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        });
+      }).then(function (st) {
         stream = st;
         var AC = window.AudioContext || window.webkitAudioContext;
         ctx = new AC();
