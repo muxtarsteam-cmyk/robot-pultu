@@ -37,7 +37,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v6</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v7</span></h1>
 
   <div class="card">
     <div class="status">
@@ -73,7 +73,6 @@
 <script>
 (function () {
   var SPP = '00001101-0000-1000-8000-00805F9B34FB';
-  var MODEL = 'gemini-2.5-flash';
   var $ = function (id) { return document.getElementById(id); };
   var dot = $('dot'), connText = $('connText'), connBtn = $('connBtn');
   var lastCmd = $('lastCmd'), lastVoice = $('lastVoice'), noteEl = $('note'), voiceBtn = $('voiceBtn');
@@ -248,23 +247,47 @@
     'Əgər səsdə komanda yoxdursa, danışıq yoxdursa və ya aydın deyilsə: N|. ' +
     'Başqa heç nə yazma.';
 
+  // Köhnə model yeni açarlara bağlıdır (404). Sıra ilə işləyəni tapır və yadda saxlayır.
+  var MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+  var goodModel = '';
+  try { goodModel = localStorage.getItem('gemini_model') || ''; } catch (e) {}
+
+  function callModel(model, b64) {
+    var body = {
+      contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: 'audio/wav', data: b64 } }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 200 }
+    };
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+  }
+
   function askGemini(wavBlob) {
     return blobToBase64(wavBlob).then(function (b64) {
-      var body = {
-        contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: 'audio/wav', data: b64 } }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 40, thinkingConfig: { thinkingBudget: 0 } }
-      };
-      return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent?key=' + encodeURIComponent(apiKey), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-      });
-    }).then(function (r) {
-      if (!r.ok) {
-        var msg = r.status === 400 || r.status === 403 ? 'API açarı səhvdir və ya icazəsi yoxdur (' + r.status + ')'
-                : r.status === 429 ? 'Gemini limiti dolub, bir az gözləyin (429)'
-                : 'Gemini xətası (' + r.status + ')';
-        throw new Error(msg);
+      var list = goodModel ? [goodModel] : MODELS.slice();
+      var lastStatus = 0;
+      function next(i) {
+        if (i >= list.length) {
+          if (goodModel) { goodModel = ''; try { localStorage.removeItem('gemini_model'); } catch (e) {} return next0(); }
+          throw new Error('Heç bir Gemini modeli cavab vermədi (' + lastStatus + '). Açarı yoxlayın.');
+        }
+        return callModel(list[i], b64).then(function (r) {
+          lastStatus = r.status;
+          if (r.ok) {
+            goodModel = list[i];
+            try { localStorage.setItem('gemini_model', goodModel); } catch (e) {}
+            modeInfo.textContent = 'Gemini aktivdir (' + goodModel + ')';
+            return r.json();
+          }
+          if (r.status === 404 || r.status === 503) return next(i + 1);   // model yoxdur / məşğuldur: növbətini sına
+          var msg = r.status === 400 || r.status === 403 ? 'API açarı səhvdir və ya icazəsi yoxdur (' + r.status + ')'
+                  : r.status === 429 ? 'Gemini limiti dolub, bir az gözləyin (429)'
+                  : 'Gemini xətası (' + r.status + ')';
+          throw new Error(msg);
+        });
       }
-      return r.json();
+      function next0() { list = MODELS.slice(); return next(0); }
+      return next(0);
     }).then(function (j) {
       var t = '';
       try { t = j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join(''); } catch (e) {}
@@ -474,7 +497,7 @@
   setTimeout(function () {
     if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
   }, 1500);
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v6 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v7 ✓';
 })();
 </script>
 </body>
