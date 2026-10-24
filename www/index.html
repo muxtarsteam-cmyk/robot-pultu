@@ -37,7 +37,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu</h1>
+  <h1>🤖 Robot Pultu <span style="font-size:11px;color:var(--muted)">v3</span></h1>
 
   <div class="card">
     <div class="status">
@@ -311,9 +311,21 @@
     }
   }
 
+  // Mikrofon icazəsini ayrıca yoxla və lazım olsa xüsusi istə
+  function micPermission(cb) {
+    var p = window.cordova && cordova.plugins && cordova.plugins.permissions;
+    if (!p) return cb(true);
+    var REC = p.RECORD_AUDIO || 'android.permission.RECORD_AUDIO';
+    p.checkPermission(REC, function (s) {
+      if (s && s.hasPermission) return cb(true);
+      p.requestPermission(REC, function (s2) { cb(!!(s2 && s2.hasPermission)); }, function () { cb(false); });
+    }, function () { cb(true); });
+  }
+
   function startGemini() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Mikrofon bu mühitdə dəstəklənmir'); return; }
-    askPermissions(function () {
+    micPermission(function (ok) {
+      if (!ok) { note('Mikrofon icazəsi YOXDUR. Telefon: Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver. Sonra tətbiqi tam bağlayıb yenidən açın.'); return; }
       // Bəzi telefonlar əlavə ayarlarla (səs-küy azaltma) mikrofonu açmır: əvvəl sadə, sonra ayarlı cəhd
       var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       gum({ audio: true }).catch(function (e1) {
