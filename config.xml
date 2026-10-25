@@ -20,6 +20,7 @@
 
     <plugin name="cordova-plugin-bluetooth-classic-serial-port" />
     <plugin name="cordova-plugin-speechrecognition" />
+    <plugin name="cordova-plugin-tts" />
     <plugin name="cordova-plugin-android-permissions" spec="1.1.5" />
 
     <platform name="android">
