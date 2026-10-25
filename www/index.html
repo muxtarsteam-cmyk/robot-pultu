@@ -29,6 +29,8 @@
   #bF{grid-area:1/2} #bL{grid-area:2/1} #bS{grid-area:2/2;background:var(--stop)} #bR{grid-area:2/3} #bB{grid-area:3/2}
   #bS.active { background:#ff6b6b; }
   .note { font-size:12px; color:var(--warn); text-align:center; min-height:16px; }
+  .note.err { background:#7f1d1d; color:#fff; border-radius:8px; padding:6px 8px; font-size:13px; }
+  .sim { font-size:11px; color:var(--warn); text-align:center; }
   .row { display:flex; gap:6px; margin-top:6px; align-items:center; }
   .row input, .row select { flex:1; min-width:0; border:0; border-radius:8px; padding:8px; background:#0f172a; color:var(--text); font-size:14px; user-select:text; -webkit-user-select:text; }
   .row label { font-size:12px; color:var(--muted); flex:0 0 110px; }
@@ -48,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v8</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v9</span></h1>
 
   <div class="card">
     <div class="status">
@@ -68,6 +70,7 @@
 
   <div class="card">
     <button class="voice" id="voiceBtn">🎤 Səs idarəsi: Söndürülüb</button>
+    <div class="row"><button id="ttsTest" style="flex:1">🔊 Səs testi</button></div>
     <div id="botLine"></div>
     <div class="row">
       <label for="nameInput">Robotun adı</label>
@@ -110,6 +113,7 @@
     <div class="info"><span id="peopleInfo">Tanınan şəxs yoxdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
   </details>
 
+  <div class="sim" id="simLine"></div>
   <div class="note" id="note"></div>
 </div>
 
@@ -127,7 +131,15 @@
   var nameInput = $('nameInput'), nameSave = $('nameSave'), botLine = $('botLine'), missionLine = $('missionLine');
   var video = $('cam'), camHint = $('camHint'), camBtn = $('camBtn');
   var NAMES = { F:'İrəli', B:'Geri', L:'Sola', R:'Sağa', S:'Dayan' };
-  var note = function (t) { noteEl.textContent = t || ''; };
+  var note = function (t) { noteEl.textContent = t || ''; noteEl.className = 'note'; };
+  var lastWarnSpoken = 0;
+  // Xəta: ekranda qırmızı xəbərdarlıq + səslə məlumat
+  function warn(msg, noSpeak) {
+    msg = String(msg || 'Xəta');
+    noteEl.textContent = '⚠ ' + msg; noteEl.className = 'note err';
+    try { console.log('[Robot xəta] ' + msg); } catch (e) {}
+    if (!noSpeak && Date.now() - lastWarnSpoken > 6000) { lastWarnSpoken = Date.now(); speak(msg.split('. ')[0].slice(0, 120)); }
+  }
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
   // ---------- Yadda saxlanan ayarlar ----------
@@ -183,6 +195,7 @@
     dot.classList.toggle('on', on);
     connText.textContent = on ? 'Qoşulub' + (name ? ': ' + name : '') : 'Qoşulmayıb';
     connBtn.textContent = on ? 'Ayır' : 'Bluetooth-a Qoşul';
+    if (on) $('simLine').textContent = '';
   }
 
   function permPlugin() { return window.cordova && cordova.plugins && cordova.plugins.permissions; }
@@ -226,19 +239,19 @@
       var was = connected;
       setConnected(false); devAddr = null;
       if (was) abortMission();
-      note(was ? 'Bağlantı kəsildi' : 'Qoşulmaq alınmadı. Robotun işə düşdüyünü və cütləşdiyini yoxlayın. ' + (err || ''));
+      warn(was ? 'Bluetooth bağlantısı kəsildi' : 'Bluetooth qoşulmadı. Robotun işə düşdüyünü və cütləşdiyini yoxlayın.');
     });
   }
   function connect() {
-    if (!BT) { note('Bluetooth plugin tapılmadı. Tətbiq düzgün qurulmayıb.'); return; }
+    if (!BT) { warn('Bluetooth plugin tapılmadı. Simulyasiya rejimində işləyir.'); return; }
     askPermissions(function () {
       ensureEnabled(function () {
         BT.list(function (devices) {
-          if (!devices || !devices.length) { note('Cütləşdirilmiş cihaz yoxdur. Telefon ayarlarında HC-05 ilə cütləşin (PIN 1234 / 0000).'); return; }
+          if (!devices || !devices.length) { warn('Cütləşdirilmiş cihaz yoxdur. Telefon ayarlarında HC-05 ilə cütləşin.'); return; }
           var hc = devices.filter(function (d) { return /hc-?0[56]/i.test(d.name || ''); });
           if (hc.length === 1) doConnect(hc[0]); else showPicker(devices, doConnect);
-        }, function (e) { note('Cihaz siyahısı alınmadı. Bluetooth icazəsini yoxlayın. ' + (e || '')); });
-      }, note);
+        }, function (e) { warn('Cihaz siyahısı alınmadı. Bluetooth icazəsini yoxlayın.'); });
+      }, function (m) { warn(m || 'Bluetooth açılmadı'); });
     });
   }
   function disconnect() {
@@ -250,8 +263,8 @@
 
   function send(c) {
     lastCmd.textContent = NAMES[c] + ' (' + c + ')';
-    if (!connected || !BT) { note('Əvvəlcə Bluetooth-a qoşulun'); return; }
-    BT.write(devAddr, SPP, c, function () {}, function () { note('Göndərmə xətası'); });
+    if (!connected || !BT) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; try { console.log('[SİM] komanda: ' + c); } catch (e) {} return; }
+    BT.write(devAddr, SPP, c, function () {}, function () { warn('Robota göndərmə xətası. Bluetooth bağlantısını yoxlayın.'); });
   }
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
@@ -269,41 +282,68 @@
   // =====================================================================
   //  DANIŞIQ (TTS)
   // =====================================================================
-  var ttsActive = false, ttsBusyUntil = 0;
+  var ttsActive = false, ttsBusyUntil = 0, ttsUnlocked = false, ttsVoices = [], voiceWarned = false;
+  function loadVoices() { try { ttsVoices = speechSynthesis.getVoices() || []; } catch (e) {} }
+  if ('speechSynthesis' in window) { loadVoices(); try { speechSynthesis.onvoiceschanged = loadVoices; } catch (e) {} }
+  // Brauzerin avtomatik səs bloku: ilk toxunuşda səs sintezini "oyadırıq"
+  function unlockTTS() {
+    if (ttsUnlocked) return;
+    ttsUnlocked = true;
+    try { var u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
+    loadVoices();
+  }
+  ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlockTTS, { passive: true }); });
+
+  function findVoice(lang) {
+    var l = lang.toLowerCase(), i, v;
+    for (i = 0; i < ttsVoices.length; i++) { v = ttsVoices[i]; if (String(v.lang || '').replace('_', '-').toLowerCase() === l) return v; }
+    for (i = 0; i < ttsVoices.length; i++) { v = ttsVoices[i]; if (String(v.lang || '').slice(0, 2).toLowerCase() === l.slice(0, 2)) return v; }
+    return null;
+  }
+  // Azərbaycan səsini tapır; yoxdursa türk səsinə keçir
   function pickLang() {
     if (ttsLang !== 'auto') return ttsLang;
-    try {
-      var vs = speechSynthesis.getVoices() || [];
-      if (vs.some(function (v) { return /^az/i.test(v.lang || ''); })) return 'az-AZ';
-      if (vs.some(function (v) { return /^tr/i.test(v.lang || ''); })) return 'tr-TR';
-    } catch (e) {}
-    return 'az-AZ';
+    if (findVoice('az-AZ')) return 'az-AZ';
+    if (!voiceWarned) { voiceWarned = true; note('Telefonda Azərbaycan səsi yoxdur, türk səsi ilə danışacağam'); }
+    return 'tr-TR';
   }
   function speak(text) {
+    text = String(text || '');
     botLine.textContent = '🤖 ' + text;
     return new Promise(function (resolve) {
-      var done = false;
+      var done = false, lang = pickLang(), plugin = window.TTS && typeof window.TTS.speak === 'function';
       function fin() { if (done) return; done = true; ttsActive = false; ttsBusyUntil = Date.now() + 700; if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle'); resolve(); }
       ttsActive = true; ttsBusyUntil = Date.now() + 60000;
       if (voiceOn) updateVoiceBtn('say');
-      if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-        setTimeout(fin, Math.min(4000, 800 + text.length * 40)); return;
+      var guard = setTimeout(fin, 4000 + text.length * 120);
+      function finAll() { clearTimeout(guard); fin(); }
+      function viaWeb() {
+        if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+          if (!voiceWarned) { voiceWarned = true; note('Bu telefonda səs sintezi yoxdur. Cavab yalnız yazılı göstərilir.'); }
+          setTimeout(finAll, Math.min(3000, 600 + text.length * 40)); return;
+        }
+        try {
+          loadVoices();
+          try { speechSynthesis.cancel(); speechSynthesis.resume(); } catch (e) {}
+          var u = new SpeechSynthesisUtterance(text);
+          u.lang = lang; u.volume = 1; u.rate = 1; u.pitch = 1;
+          var v = findVoice(lang); if (v) u.voice = v;
+          u.onend = finAll; u.onerror = function () { finAll(); };
+          speechSynthesis.speak(u);
+        } catch (e) { setTimeout(finAll, 800); }
       }
-      try {
-        speechSynthesis.cancel();
-        var u = new SpeechSynthesisUtterance(text), lang = pickLang();
-        u.lang = lang;
-        var vs = speechSynthesis.getVoices() || [];
-        var v = null, i;
-        for (i = 0; i < vs.length && !v; i++) if (String(vs[i].lang || '').replace('_', '-').toLowerCase() === lang.toLowerCase()) v = vs[i];
-        for (i = 0; i < vs.length && !v; i++) if (String(vs[i].lang || '').slice(0, 2).toLowerCase() === lang.slice(0, 2).toLowerCase()) v = vs[i];
-        if (v) u.voice = v;
-        u.onend = fin; u.onerror = fin;
-        speechSynthesis.speak(u);
-        setTimeout(fin, 3000 + text.length * 110);      // ehtiyat: onend gəlməsə
-      } catch (e) { setTimeout(fin, 1000); }
+      if (plugin) {
+        try {
+          window.TTS.speak({ text: text, locale: lang, rate: 1 }, finAll, function () {
+            if (lang !== 'tr-TR' && ttsLang === 'auto') {
+              try { window.TTS.speak({ text: text, locale: 'tr-TR', rate: 1 }, finAll, viaWeb); } catch (e) { viaWeb(); }
+            } else viaWeb();
+          });
+        } catch (e) { viaWeb(); }
+      } else viaWeb();
     });
   }
+  $('ttsTest').addEventListener('click', function () { unlockTTS(); speak('Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.'); });
 
   // =====================================================================
   //  GEMINI (mətn, səs, şəkil)
@@ -356,14 +396,14 @@
   var camStream = null, cvs = document.createElement('canvas');
   async function startCamera() {
     if (camStream) return true;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Kamera bu mühitdə dəstəklənmir'); return false; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { warn('Kamera bu mühitdə dəstəklənmir'); return false; }
     var ok = await permAsync(PERM_CAM);
-    if (!ok) { note('Kamera icazəsi YOXDUR. Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Kamera → İcazə ver.'); return false; }
+    if (!ok) { warn('Kamera icazəsi yoxdur. Ayarlar, Tətbiqlər, Robot Pultu, İcazələr, Kamera.'); return false; }
     var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     try { camStream = await gum({ video: { facingMode: { ideal: camFacing }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }); }
     catch (e) {
       try { camStream = await gum({ video: true, audio: false }); }
-      catch (e2) { note('Kamera açılmadı: ' + (e2 && e2.name ? e2.name : e2)); return false; }
+      catch (e2) { warn('Kamera açılmadı: ' + (e2 && e2.name ? e2.name : e2)); return false; }
     }
     video.srcObject = camStream;
     try { await video.play(); } catch (e) {}
@@ -404,7 +444,7 @@
   function setMissionLine(t) { missionLine.textContent = t || 'Tapşırıq yoxdur'; }
   function chk() { if (mission && mission.abort) throw { abort: true }; }
   async function wait(ms) { var end = Date.now() + ms; while (Date.now() < end) { chk(); await sleep(Math.max(1, Math.min(100, end - Date.now()))); } }
-  async function moveFor(cmd, ms) { chk(); send(cmd); await wait(ms); send('S'); await wait(450); }
+  async function moveFor(cmd, ms) { chk(); send(cmd); await wait(connected ? ms : Math.min(ms, 200)); send('S'); await wait(connected ? 450 : 100); }
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
     if (mission) { mission.abort = true; try { speechSynthesis.cancel(); } catch (e) {} }
@@ -414,13 +454,13 @@
     if (mission) { await speak('Əvvəlki tapşırıq davam edir. Dayan deyin.'); return; }
     mission = { title: title, abort: false }; setMissionLine('▶ ' + title);
     try { await fn(); }
-    catch (e) { if (!(e && e.abort)) { note(e && e.message ? e.message : 'Xəta'); await speak('Xəta oldu.'); } else { setMissionLine('⛔ Dayandırıldı'); } }
+    catch (e) { if (!(e && e.abort)) { warn(e && e.message ? e.message : 'Xəta oldu'); } else { setMissionLine('⛔ Dayandırıldı'); } }
     finally { if (connected) send('S'); mission = null; if (missionLine.textContent.indexOf('⛔') !== 0) setMissionLine(''); }
   }
   async function ensureReady(needMove) {
-    if (!apiKey) { note('Əvvəlcə Gemini açarını daxil edin'); await speak('Gemini açarı yoxdur.'); return false; }
-    if (needMove && !connected) { await speak('Robot Bluetooth-a qoşulmayıb.'); return false; }
-    if (!(await startCamera())) { await speak('Kamera açılmadı.'); return false; }
+    if (!apiKey) { warn('Gemini açarı yoxdur. Açarı daxil edib Saxla düyməsinə basın.'); return false; }
+    if (needMove && !connected) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; await speak('Bluetooth qoşulmayıb, simulyasiya rejimində işləyirəm.'); }
+    if (!(await startCamera())) return false;
     return true;
   }
 
@@ -572,8 +612,8 @@
   // ---------- Tanış olmaq: üzü və adı yadda saxla ----------
   async function introduce(name) {
     if (!name) { await speak('Adınızı eşitmədim, təkrar deyin.'); return; }
-    if (!apiKey) { await speak('Gemini açarı yoxdur.'); return; }
-    if (!(await startCamera())) { await speak('Kamera açılmadı.'); return; }
+    if (!apiKey) { warn('Gemini açarı yoxdur'); return; }
+    if (!(await startCamera())) return;
     await speak(name + ', çox şadam! Mənə baxın, sizi yadda saxlayıram.');
     for (var a = 0; a < 3; a++) {
       await sleep(1200);
@@ -617,8 +657,8 @@
 
   // ---------- Ətrafa bax ----------
   async function describeView(question) {
-    if (!apiKey) { note('Əvvəlcə Gemini açarını daxil edin'); return; }
-    if (!(await startCamera())) { await speak('Kamera açılmadı.'); return; }
+    if (!apiKey) { warn('Gemini açarı yoxdur'); return; }
+    if (!(await startCamera())) return;
     var t = await gemini([{ text: 'TASK:DESCRIBE\nYou are the eye of a small robot. ' + (question ? 'The user asked: "' + question + '". Answer it.' : 'Say what you see in front of you.') +
       ' Reply in Azerbaijani, at most 2 short sentences, plain text, no markdown, no emoji.' }, { text: 'Frame:' }, imgPart(grabFrame())], { maxTokens: 300 });
     await speak(t || 'Heç nə görə bilmədim.');
@@ -745,7 +785,7 @@
     }
     busy++; updateVoiceBtn('send');
     routeUtterance(wav).catch(function (e) {
-      note(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
+      warn(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
     }).then(function () { busy--; if (voiceOn && !ttsActive) updateVoiceBtn(busy ? 'send' : 'idle'); });
   }
 
@@ -780,9 +820,9 @@
 
   // ---- Mikrofon: WebView getUserMedia (MODIFY_AUDIO_SETTINGS icazəsi ilə) ----
   function startGemini() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Mikrofon bu mühitdə dəstəklənmir'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { warn('Mikrofon bu mühitdə dəstəklənmir'); return; }
     micPermission(function (ok) {
-      if (!ok) { note('Mikrofon icazəsi YOXDUR. Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver.'); return; }
+      if (!ok) { warn('Mikrofon icazəsi yoxdur. Ayarlar, Tətbiqlər, Robot Pultu, İcazələr, Mikrofon.'); return; }
       var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices), tries = 0;
       function attempt() {
         tries++;
@@ -805,7 +845,7 @@
         preRoll = []; speech = []; speaking = false; noise = 0.008;
         voiceOn = true; updateVoiceBtn('idle'); note('');
       }).catch(function (e) {
-        note('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. Tətbiq icazələrində mikrofonu yoxlayın.');
+        warn('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. İcazələri yoxlayın.');
       });
     });
   }
@@ -861,7 +901,7 @@
   }
 
   // ---------- Ümumi düymələr ----------
-  function startVoice() { apiKey ? startGemini() : startNative(); }
+  function startVoice() { unlockTTS(); apiKey ? startGemini() : startNative(); }
   function stopVoice() {
     voiceOn = false; updateVoiceBtn();
     stopGemini();
@@ -869,7 +909,7 @@
   }
   voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
 
-  function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) note(e && e.message ? e.message : 'Xəta'); }); }; }
+  function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
   $('lookBtn').addEventListener('click', guarded(function () { return describeView(''); }));
   $('doorBtn').addEventListener('click', guarded(function () { return runMission('Qapını tap', missionDoor); }));
   $('personBtn').addEventListener('click', guarded(function () { return runMission('Adamın yanına get', function () { return missionPerson(null); }); }));
@@ -879,7 +919,7 @@
   // ---------- Başlanğıc ----------
   document.addEventListener('deviceready', function () {
     BT = window.bluetoothClassicSerial || null;
-    if (!BT) note('Bluetooth plugin yüklənməyib');
+    if (!BT) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; }
     askPermissions(function () {});
   }, false);
   document.addEventListener('pause', function () { abortMission(); if (connected) send('S'); if (voiceOn) stopVoice(); stopCamera(); }, false);
@@ -894,9 +934,9 @@
     handleUtterance: function () { handleUtterance([new Float32Array(16000)]); },
     setBT: function (b) { BT = b; }, setVisionGap: function (g) { visionGap = g; },
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
-    state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
+    ttsTest: function () { return speak('Test'); }, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v8 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v9 ✓';
 })();
 </script>
 </body>
