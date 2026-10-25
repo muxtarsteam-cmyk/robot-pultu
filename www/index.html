@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v12</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v13</span></h1>
 
   <div class="card">
     <div class="status">
@@ -104,6 +104,7 @@
     <summary>⚙ Ayarlar və tanınan şəxslər</summary>
     <div class="row"><label for="turnMs">Dönmə (ms)</label><input id="turnMs" type="number" min="100" max="2000" step="50"></div>
     <div class="row"><label for="fwdMs">İrəli addım (ms)</label><input id="fwdMs" type="number" min="100" max="3000" step="50"></div>
+    <div class="row"><label for="pauseMs">Susma gözləmə (ms)</label><input id="pauseMs" type="number" min="700" max="4000" step="100"></div>
     <div class="row"><label for="circleSteps">Tam dövrə (addım)</label><input id="circleSteps" type="number" min="4" max="30" step="1"></div>
     <div class="row"><label for="camFacing">Kamera</label>
       <select id="camFacing"><option value="environment">Arxa kamera</option><option value="user">Ön kamera</option></select></div>
@@ -151,7 +152,7 @@
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
-  var camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
+  var pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var apiKey = sget('gemini_key', '');
@@ -159,7 +160,7 @@
 
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
-  $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
+  $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
   $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine; $('ttsVoice').value = ttsVoiceName;
 
   function updateMode() {
@@ -183,6 +184,7 @@
   $('setSave').addEventListener('click', function () {
     turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
     circleSteps = Math.max(4, +$('circleSteps').value || 12);
+    pauseMs = Math.min(4000, Math.max(700, +$('pauseMs').value || 1600)); sset('pause_ms', pauseMs);
     camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; gttsFails = 0; ttsVoiceName = $('ttsVoice').value; sset('tts_engine', ttsEngine); sset('tts_voice', ttsVoiceName);
     sset('turn_ms', turnMs); sset('fwd_ms', fwdMs); sset('circle_steps', circleSteps); sset('cam_facing', camFacing); sset('tts_lang', ttsLang);
     note('Ayarlar saxlanıldı');
@@ -274,7 +276,7 @@
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
     var c = btn.dataset.c;
-    function down(e) { e.preventDefault(); if (mission) abortMission(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
+    function down(e) { e.preventDefault(); if (mission || ttsActive) abortMission(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
     function up(e) { e.preventDefault(); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') send('S'); } }
     btn.addEventListener('pointerdown', down);
     btn.addEventListener('pointerup', up);
@@ -544,12 +546,14 @@
       if (!played && token === speakToken) {
         var lang = pickLang(), bv = bestVoice(lang), bl = String((bv && bv.lang) || lang),
             clean2 = normalizeSpeech(text, /^az/i.test(bl) ? false : /^tr/i.test(bl) ? true : 'en');
-        if (clean2) await speakDevice(clean2, lang);
+        var dch = splitChunks(clean2, 200);
+        for (var di = 0; di < dch.length && token === speakToken; di++) await speakDevice(dch[di], lang);
       }
     } catch (e) {}
     if (token === speakToken) {
       ttsActive = false; ttsBusyUntil = Date.now() + 700;
       setTimeout(function () { if (!ttsActive) muteMic(false); }, 700);     // səs bitdi: mikrofonu yenidən aç
+      if (convo) activeUntil = Date.now() + 15000;
       if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
     }
   }
@@ -657,7 +661,8 @@
   async function moveFor(cmd, ms) { chk(); send(cmd); await wait(connected ? ms : Math.min(ms, 200)); send('S'); await wait(connected ? 450 : 100); }
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
-    if (mission) { mission.abort = true; stopSpeech(); ttsActive = false; muteMic(false); }
+    if (mission) mission.abort = true;
+    if (ttsActive) { stopSpeech(); ttsActive = false; muteMic(false); }
     if (connected) send('S');
   }
   async function runMission(title, fn) {
@@ -877,7 +882,7 @@
   // =====================================================================
   //  SƏS: Gemini ilə dinləmə + çağırış (wake word) + marşrutlaşdırma
   // =====================================================================
-  var voiceOn = false, activeUntil = 0;
+  var voiceOn = false, activeUntil = 0, convo = false;
   function updateVoiceBtn(state) {
     voiceBtn.classList.toggle('on', voiceOn);
     voiceBtn.classList.toggle('talk', voiceOn && state === 'talk');
@@ -944,7 +949,8 @@
       '- "read_screen": e.g. "kompüterə yaxınlaş, ekrandakı sualı oxu və düzgün cavabı söylə".\n' +
       '- "introduce": the user says their own name ("Mənim adım Əlidi", "Mən Leylayam"): put the base form of the name in "name".\n' +
       '- "look": the user asks what the robot sees / to look around / asks about something visible ("nə görürsən?", "bu nədir?"). Put the question in "question" or null.\n' +
-      '- "ask": any other question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
+      '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
+      '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
       '- "none": noise, silence, or speech not addressed to the robot.\n' +
       'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop" and "drive", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
   }
@@ -955,17 +961,27 @@
     return t.trim();
   }
 
+  // Nağıl / uzun mətn: orijinal səs yazısı Gemini-yə tam göndərilir, cavab uzun olur və hissə-hissə oxunur
+  async function longReply(b64, heard) {
+    botLine.textContent = '🤖 Düşünürəm...';
+    var t = await gemini([{ text: 'You are the voice of a friendly home robot named "' + robotName + '". Listen to the user\'s whole spoken request (Azerbaijani) and fulfil it completely. ' +
+      'If it is a bedtime story / fairy tale for a child, tell a calm, warm, original story in clear simple Azerbaijani, about 250 to 400 words, with a gentle ending that helps the child fall asleep. ' +
+      'Output ONLY the text to be read aloud: plain text, short sentences, no markdown, no emoji, no title, no stage directions.' }, audioPart(b64)], { maxTokens: 4000, temp: 0.8 });
+    if (!t) { warn('Gemini boş cavab verdi, yenidən cəhd edin'); return; }
+    await speak(t);
+  }
+
   async function routeUtterance(wav) {
     var b64 = await blobToBase64(wav);
     var active = Date.now() < activeUntil;
-    var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 500 });
+    var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 900 });
     var r = parseJSON(t);
     if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
     lastVoice.textContent = String(r.heard || '—').slice(0, 40);
     var intent = r.intent || 'none', needName = !(intent === 'stop' || intent === 'drive');
     if (needName && !(r.called || active)) return;
     if (mission && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S')) return;   // tapşırıq gedir
-    if (needName) activeUntil = Date.now() + 15000;
+    if (needName) { activeUntil = Date.now() + 15000; convo = true; }
 
     switch (intent) {
       case 'stop': abortMission(); send('S'); note(''); break;
@@ -974,6 +990,7 @@
         break;
       case 'call': await speak('Bəli, necə köməklik edə bilərəm?'); break;
       case 'ask': if (r.answer) await speak(String(r.answer)); break;
+      case 'long': await longReply(b64, r.heard); break;
       case 'look': await describeView(r.question || ''); break;
       case 'introduce': await runMission('Tanışlıq', function () { return introduce(r.name); }); break;
       case 'find_door': await runMission('Qapını tap', missionDoor); break;
@@ -985,7 +1002,8 @@
 
   function handleUtterance(chunks) {
     var pcm = downsample(concat(chunks), curRate, 16000);
-    if (pcm.length < 16000 * 0.25) return;                // çox qısa səs-küy
+    if (pcm.length < 16000 * 0.25) return;
+    if (pcm.length > 16000 * 60) pcm = pcm.subarray(0, 16000 * 60);                // çox qısa səs-küy
     var wav = toWav(pcm, 16000);
     if (replyWaiter) {                                    // robot sual verib, cavab gözləyir
       var w = replyWaiter; replyWaiter = null; clearTimeout(w.t);
@@ -1016,8 +1034,11 @@
       if (rms > thr) { speaking = true; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; updateVoiceBtn('talk'); }
     } else {
       speech.push(chunk); speechMs += ms;
-      if (rms > thr) silenceMs = 0; else silenceMs += ms;
-      if (silenceMs > 650 || speechMs > 6000) {
+      // danışıq zamanı həssaslıq artır (cümlənin sonundakı yumşaq hecalar susma sayılmasın)
+      if (rms > thr * 0.6) silenceMs = 0; else silenceMs += ms;
+      // uzun cümlə: fasilələrdə kəsmir; yalnız uzun susmadan sonra (ayarlanan müddət) bitir; maksimum 40 saniyə
+      var hang = speechMs < 1500 ? Math.min(pauseMs, 1000) : pauseMs;
+      if (silenceMs > hang || speechMs > 40000) {
         speaking = false;
         var s = speech; speech = []; silenceMs = 0;
         updateVoiceBtn(busy ? 'send' : 'idle');
@@ -1146,7 +1167,7 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v12 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v13 ✓';
 })();
 </script>
 </body>
