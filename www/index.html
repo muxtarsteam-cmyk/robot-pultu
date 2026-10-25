@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v11</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v12</span></h1>
 
   <div class="card">
     <div class="status">
@@ -110,7 +110,9 @@
     <div class="row"><label for="ttsLang">Danışıq dili</label>
       <select id="ttsLang"><option value="auto">Avtomatik</option><option value="az-AZ">az-AZ</option><option value="tr-TR">tr-TR</option><option value="ru-RU">ru-RU</option><option value="en-US">en-US</option></select></div>
     <div class="row"><label for="ttsEngine">Səs mühərriki</label>
-      <select id="ttsEngine"><option value="auto">Avtomatik (internet səsi əvvəl)</option><option value="device">Yalnız telefon səsi</option></select></div>
+      <select id="ttsEngine"><option value="auto">Avtomatik: Gemini səsi → Google → telefon</option><option value="google">Google internet səsi → telefon</option><option value="device">Yalnız telefon səsi</option></select></div>
+    <div class="row"><label for="ttsVoice">Gemini səsi</label>
+      <select id="ttsVoice"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
     <div class="row"><button id="setSave" class="primary" style="flex:1">Ayarları saxla</button></div>
     <div class="info"><span id="peopleInfo">Tanınan şəxs yoxdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
   </details>
@@ -149,7 +151,7 @@
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
-  var camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto');
+  var camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var apiKey = sget('gemini_key', '');
@@ -158,7 +160,7 @@
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
   $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
-  $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine;
+  $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine; $('ttsVoice').value = ttsVoiceName;
 
   function updateMode() {
     modeInfo.textContent = apiKey ? 'Gemini aktivdir' + (goodModel ? ' (' + goodModel + ')' : '') : 'Açar yoxdur: telefonun səs tanıması istifadə olunur';
@@ -181,7 +183,7 @@
   $('setSave').addEventListener('click', function () {
     turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
     circleSteps = Math.max(4, +$('circleSteps').value || 12);
-    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; sset('tts_engine', ttsEngine);
+    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; gttsFails = 0; ttsVoiceName = $('ttsVoice').value; sset('tts_engine', ttsEngine); sset('tts_voice', ttsVoiceName);
     sset('turn_ms', turnMs); sset('fwd_ms', fwdMs); sset('circle_steps', circleSteps); sset('cam_facing', camFacing); sset('tts_lang', ttsLang);
     note('Ayarlar saxlanıldı');
     if (camStream) { stopCamera(); }
@@ -432,18 +434,112 @@
     });
   }
 
+  // ---------- Gemini TTS (bulud, təbii səs) ----------
+  var GTTS_MODELS = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview'];
+  var gttsModel = sget('gtts_model', ''), gttsFails = 0, ttsCache = {};
+  function b64ToBytes(b) { var bin = atob(b), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function findAudio(o, out) {
+    if (!o || typeof o !== 'object') return out;
+    if (typeof o.data === 'string' && o.data.length > 500) out.push({ b64: o.data, mime: String(o.mime_type || o.mimeType || '') });
+    for (var k in o) if (o.hasOwnProperty(k) && typeof o[k] === 'object') findAudio(o[k], out);
+    return out;
+  }
+  function pcmToWavBlob(bytes, rate) {
+    var buf = new ArrayBuffer(44 + bytes.length), v = new DataView(buf);
+    function w(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    w(0, 'RIFF'); v.setUint32(4, 36 + bytes.length, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, bytes.length, true);
+    new Uint8Array(buf, 44).set(bytes);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  function audioToBlob(a) {
+    var bytes = b64ToBytes(a.b64);
+    if (bytes.length > 4 && bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70) return new Blob([bytes], { type: 'audio/wav' });   // RIFF
+    var m = /rate=(\d+)/i.exec(a.mime || '');
+    return pcmToWavBlob(bytes, m ? +m[1] : 24000);
+  }
+  async function gttsCall(model, text, legacy) {
+    var url, init;
+    if (!legacy) {
+      url = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+      init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify({
+        model: model, input: [{ type: 'user_input', content: [{ type: 'text', text: text }] }],
+        response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice: ttsVoiceName }] } }) };
+    } else {
+      url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey);
+      init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        contents: [{ parts: [{ text: text }] }],
+        generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: ttsVoiceName } } } } }) };
+    }
+    var r = await fetch(url, init);
+    if (!r.ok) return { status: r.status };
+    var list = findAudio(await r.json(), []);
+    return list.length ? { blob: audioToBlob(list[list.length - 1]) } : { status: 0 };
+  }
+  // null = alınmadı (sonrakı mühərrikə keç)
+  async function geminiTTS(text) {
+    var key = ttsVoiceName + '|' + text;
+    if (ttsCache[key]) return ttsCache[key];
+    var models = gttsModel ? [gttsModel] : GTTS_MODELS;
+    try {
+      for (var i = 0; i < models.length; i++) {
+        for (var lg = 0; lg < 2; lg++) {
+          var r = await gttsCall(models[i], text, lg === 1);
+          if (r.blob) {
+            if (gttsModel !== models[i]) { gttsModel = models[i]; sset('gtts_model', gttsModel); }
+            if (Object.keys(ttsCache).length > 30) ttsCache = {};
+            ttsCache[key] = r.blob; return r.blob;
+          }
+          if (r.status === 429 || r.status === 403 || r.status === 401) return null;   // limit/açar problemi: model dəyişməyin faydası yoxdur
+        }
+      }
+    } catch (e) {}
+    if (gttsModel) { gttsModel = ''; try { localStorage.removeItem('gtts_model'); } catch (e) {} }
+    return null;
+  }
+  function playBlob(blob, token) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(blob), a = new Audio(url), settled = false;
+      function end(v) { if (settled) return; settled = true; try { URL.revokeObjectURL(url); } catch (e) {} resolve(v); }
+      curAudio = a;
+      a.onended = function () { end(true); };
+      a.onerror = function () { end(false); };
+      var p = a.play(); if (p && p.catch) p.catch(function () { end(false); });
+    });
+  }
+  async function playGemini(chunks, token) {
+    var started = false, next = geminiTTS(chunks[0]);
+    for (var i = 0; i < chunks.length; i++) {
+      var blob = await next;
+      if (token !== speakToken) return true;
+      if (!blob) { gttsFails++; return started; }
+      next = i + 1 < chunks.length ? geminiTTS(chunks[i + 1]) : null;       // növbətini öncədən hazırla
+      if (!(await playBlob(blob, token))) { gttsFails++; return started; }
+      started = true; gttsFails = 0;
+    }
+    return true;
+  }
+
+  // Robot danışarkən mikrofon bağlıdır (öz səsini tutmasın)
+  function muteMic(on) {
+    try { if (stream) stream.getAudioTracks().forEach(function (t) { t.enabled = !on; }); } catch (e) {}
+    if (!on) { speaking = false; speech = []; preRoll = []; }
+  }
+
   async function speak(text) {
     text = String(text || '');
     botLine.textContent = '🤖 ' + text;
     stopSpeech();
     var token = speakToken;
-    ttsActive = true; ttsBusyUntil = Date.now() + 90000;
+    ttsActive = true; ttsBusyUntil = Date.now() + 90000; muteMic(true);
     if (voiceOn) updateVoiceBtn('say');
     try {
-      var played = false;
-      if (ttsEngine === 'auto' && onlineFails < 3 && navigator.onLine !== false) {
-        var clean = normalizeSpeech(text, false);
-        if (clean) played = await playOnline(splitChunks(clean, 180), token);
+      var played = false, clean = normalizeSpeech(text, false), online = navigator.onLine !== false;
+      if (clean && ttsEngine !== 'device' && online) {
+        if (ttsEngine === 'auto' && apiKey && gttsFails < 3) played = await playGemini(splitChunks(clean, 350), token);
+        if (!played && token === speakToken && onlineFails < 3) played = await playOnline(splitChunks(clean, 180), token);
       }
       if (!played && token === speakToken) {
         var lang = pickLang(), bv = bestVoice(lang), bl = String((bv && bv.lang) || lang),
@@ -451,7 +547,11 @@
         if (clean2) await speakDevice(clean2, lang);
       }
     } catch (e) {}
-    if (token === speakToken) { ttsActive = false; ttsBusyUntil = Date.now() + 700; if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle'); }
+    if (token === speakToken) {
+      ttsActive = false; ttsBusyUntil = Date.now() + 700;
+      setTimeout(function () { if (!ttsActive) muteMic(false); }, 700);     // səs bitdi: mikrofonu yenidən aç
+      if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
+    }
   }
   $('ttsTest').addEventListener('click', function () { unlockTTS(); speak('Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.'); });
 
@@ -557,7 +657,7 @@
   async function moveFor(cmd, ms) { chk(); send(cmd); await wait(connected ? ms : Math.min(ms, 200)); send('S'); await wait(connected ? 450 : 100); }
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
-    if (mission) { mission.abort = true; stopSpeech(); ttsActive = false; }
+    if (mission) { mission.abort = true; stopSpeech(); ttsActive = false; muteMic(false); }
     if (connected) send('S');
   }
   async function runMission(title, fn) {
@@ -1046,7 +1146,7 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v11 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v12 ✓';
 })();
 </script>
 </body>
