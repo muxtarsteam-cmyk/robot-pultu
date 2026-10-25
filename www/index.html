@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v10</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v11</span></h1>
 
   <div class="card">
     <div class="status">
@@ -313,6 +313,11 @@
     }
     return best;
   }
+  // Ən təbii səsi avtomatik seçir: az-AZ > tr-TR > ingilis/istənilən; hər dildə keyfiyyət balı ilə
+  function bestVoice(lang) {
+    loadVoices();
+    return findVoice(lang) || findVoice('tr-TR') || findVoice('az-AZ') || findVoice('en-US') || ttsVoices[0] || null;
+  }
   // Cihaz səsi: az-AZ varsa o, yoxdursa tr-TR (daha təbii), sonra istənilən mövcud səs
   function pickLang() {
     if (ttsLang !== 'auto') return ttsLang;
@@ -334,7 +339,12 @@
     t = t.replace(/(\d)\s*[x×*]\s*(\d)/g, '$1 vurulsun $2').replace(/(\d)\s*[\/÷]\s*(\d)/g, '$1 bölünsün $2');
     t = t.replace(/[()\[\]{}<>«»"“”„]/g, ', ').replace(/[;:]/g, ',').replace(/\.{2,}|…/g, '.').replace(/[-–—]+/g, ' ');
     t = t.replace(/\s*[\n\r]+\s*/g, '. ').replace(/([,.!?])\1+/g, '$1').replace(/,\s*([.!?])/g, '$1').replace(/[^\p{L}\p{N}\s,.!?]/gu, ' ');
-    if (forTurkish) {                       // Türk sintezatoru Azərbaycan hərflərini səhv oxuyur
+    if (forTurkish === 'en') {              // az/tr səsi yoxdur: ingilis səsi üçün latın yazılışı
+      t = t.replace(/ə/g, 'a').replace(/Ə/g, 'A').replace(/ı/g, 'i').replace(/I/g, 'I').replace(/İ/g, 'I')
+           .replace(/ö/g, 'o').replace(/Ö/g, 'O').replace(/ü/g, 'u').replace(/Ü/g, 'U')
+           .replace(/ş/g, 'sh').replace(/Ş/g, 'Sh').replace(/ç/g, 'ch').replace(/Ç/g, 'Ch')
+           .replace(/ğ/g, 'gh').replace(/Ğ/g, 'Gh').replace(/x/g, 'kh').replace(/q/g, 'g');
+    } else if (forTurkish) {                       // Türk sintezatoru Azərbaycan hərflərini səhv oxuyur
       t = t.replace(/ə/g, 'e').replace(/Ə/g, 'E')
            .replace(/x/g, 'h').replace(/X/g, 'H')
            .replace(/q/g, 'g').replace(/Q/g, 'G')
@@ -404,7 +414,8 @@
           try { speechSynthesis.cancel(); speechSynthesis.resume(); } catch (e) {}
           var u = new SpeechSynthesisUtterance(text);
           u.lang = lang; u.volume = 1; u.rate = 0.95; u.pitch = 1.0;
-          var v = findVoice(lang) || findVoice('tr-TR') || findVoice('az-AZ'); if (v) u.voice = v;
+          var v = bestVoice(lang); if (v) { u.voice = v; u.lang = v.lang || lang; }
+          var native = v && /^az/i.test(v.lang || ''); u.rate = native ? 0.95 : 0.9; u.pitch = 1.0;
           u.onend = fin; u.onerror = fin;
           speechSynthesis.speak(u);
         } catch (e) { setTimeout(fin, 800); }
@@ -435,7 +446,8 @@
         if (clean) played = await playOnline(splitChunks(clean, 180), token);
       }
       if (!played && token === speakToken) {
-        var lang = pickLang(), clean2 = normalizeSpeech(text, /^tr/i.test(lang));
+        var lang = pickLang(), bv = bestVoice(lang), bl = String((bv && bv.lang) || lang),
+            clean2 = normalizeSpeech(text, /^az/i.test(bl) ? false : /^tr/i.test(bl) ? true : 'en');
         if (clean2) await speakDevice(clean2, lang);
       }
     } catch (e) {}
@@ -1034,7 +1046,7 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v10 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v11 ✓';
 })();
 </script>
 </body>
