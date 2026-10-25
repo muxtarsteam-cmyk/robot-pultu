@@ -8,28 +8,39 @@
 <style>
   :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --ok:#22c55e; --bad:#ef4444; --stop:#dc2626; --warn:#f59e0b; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  .app { max-width:480px; margin:0 auto; height:100%; display:flex; flex-direction:column; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); }
-  h1 { font-size:18px; margin:0; text-align:center; }
-  .card { background:var(--card); border-radius:14px; padding:12px; }
+  html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .app { max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)); }
+  h1 { font-size:17px; margin:0; text-align:center; }
+  .card { background:var(--card); border-radius:14px; padding:10px; }
   .status { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:14px; }
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--bad); margin-right:6px; }
   .dot.on { background:var(--ok); }
-  button { font:inherit; color:var(--text); border:0; border-radius:12px; background:#334155; padding:12px; font-size:16px; }
+  button { font:inherit; color:var(--text); border:0; border-radius:10px; background:#334155; padding:9px; font-size:14px; }
   button.primary { background:var(--accent); }
+  button.voice { width:100%; font-size:15px; padding:11px; }
   button.voice.on { background:var(--ok); }
   button.voice.talk { background:var(--warn); color:#111; }
-  .info { font-size:13px; color:var(--muted); display:flex; justify-content:space-between; margin-top:8px; gap:8px; }
+  button.voice.say { background:#8b5cf6; }
+  .info { font-size:12px; color:var(--muted); display:flex; justify-content:space-between; margin-top:6px; gap:8px; }
   .info b { color:var(--text); }
-  .pad { flex:1; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:10px; min-height:210px; }
-  .pad button { font-size:17px; font-weight:600; }
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,50px); gap:6px; width:100%; max-width:270px; margin:0 auto; }
+  .pad button { font-size:12px; font-weight:600; padding:2px; line-height:1.15; }
   .pad button.active { background:var(--accent); }
   #bF{grid-area:1/2} #bL{grid-area:2/1} #bS{grid-area:2/2;background:var(--stop)} #bR{grid-area:2/3} #bB{grid-area:3/2}
   #bS.active { background:#ff6b6b; }
-  .note { font-size:12px; color:var(--muted); text-align:center; min-height:30px; }
-  .keyrow { display:flex; gap:8px; margin-top:8px; }
-  .keyrow input { flex:1; min-width:0; border:0; border-radius:10px; padding:10px; background:#0f172a; color:var(--text); font-size:14px; user-select:text; -webkit-user-select:text; }
-  .keyrow button { padding:10px 14px; font-size:14px; }
+  .note { font-size:12px; color:var(--warn); text-align:center; min-height:16px; }
+  .row { display:flex; gap:6px; margin-top:6px; align-items:center; }
+  .row input, .row select { flex:1; min-width:0; border:0; border-radius:8px; padding:8px; background:#0f172a; color:var(--text); font-size:14px; user-select:text; -webkit-user-select:text; }
+  .row label { font-size:12px; color:var(--muted); flex:0 0 110px; }
+  .row button { padding:8px 12px; }
+  #botLine { margin-top:8px; font-size:13px; min-height:18px; color:#c4b5fd; }
+  .camrow { display:flex; gap:8px; }
+  .camwrap { position:relative; flex:0 0 128px; height:96px; background:#0f172a; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  .camwrap video { width:100%; height:100%; object-fit:cover; display:none; }
+  .camwrap span { font-size:11px; color:var(--muted); padding:4px; text-align:center; }
+  .btns { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .btns button { font-size:12px; padding:6px 4px; }
+  details summary { font-size:13px; color:var(--muted); cursor:pointer; }
   #picker { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:20px; }
   #picker .box { background:var(--card); border-radius:14px; padding:14px; width:100%; max-width:420px; max-height:80%; overflow:auto; }
   #picker button { width:100%; margin-top:8px; text-align:left; }
@@ -37,7 +48,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v7</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v8</span></h1>
 
   <div class="card">
     <div class="status">
@@ -56,13 +67,49 @@
   </div>
 
   <div class="card">
-    <button class="voice" id="voiceBtn" style="width:100%">🎤 Səs idarəsi: Söndürülüb</button>
-    <div class="keyrow">
-      <input id="keyInput" type="password" placeholder="Gemini API açarı" autocomplete="off">
+    <button class="voice" id="voiceBtn">🎤 Səs idarəsi: Söndürülüb</button>
+    <div id="botLine"></div>
+    <div class="row">
+      <label for="nameInput">Robotun adı</label>
+      <input id="nameInput" type="text" placeholder="Ziko" autocomplete="off">
+      <button id="nameSave">Saxla</button>
+    </div>
+    <div class="row">
+      <label for="keyInput">Gemini açarı</label>
+      <input id="keyInput" type="password" placeholder="API açarı" autocomplete="off">
       <button id="keySave">Saxla</button>
     </div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
+
+  <div class="card">
+    <div class="camrow">
+      <div class="camwrap"><video id="cam" autoplay playsinline muted></video><span id="camHint">Kamera söndürülüb</span></div>
+      <div class="btns">
+        <button id="camBtn">📷 Kamera</button>
+        <button id="lookBtn">👁 Nə görürsən?</button>
+        <button id="doorBtn">🚪 Qapıya get</button>
+        <button id="personBtn">🧍 Adama get</button>
+        <button id="screenBtn">💻 Ekranı oxu</button>
+        <button id="abortBtn" style="background:var(--stop)">⛔ Dayandır</button>
+      </div>
+    </div>
+    <div class="info"><span id="missionLine">Tapşırıq yoxdur</span></div>
+  </div>
+
+  <details class="card">
+    <summary>⚙ Ayarlar və tanınan şəxslər</summary>
+    <div class="row"><label for="turnMs">Dönmə (ms)</label><input id="turnMs" type="number" min="100" max="2000" step="50"></div>
+    <div class="row"><label for="fwdMs">İrəli addım (ms)</label><input id="fwdMs" type="number" min="100" max="3000" step="50"></div>
+    <div class="row"><label for="circleSteps">Tam dövrə (addım)</label><input id="circleSteps" type="number" min="4" max="30" step="1"></div>
+    <div class="row"><label for="camFacing">Kamera</label>
+      <select id="camFacing"><option value="environment">Arxa kamera</option><option value="user">Ön kamera</option></select></div>
+    <div class="row"><label for="ttsLang">Danışıq dili</label>
+      <select id="ttsLang"><option value="auto">Avtomatik</option><option value="az-AZ">az-AZ</option><option value="tr-TR">tr-TR</option><option value="ru-RU">ru-RU</option><option value="en-US">en-US</option></select></div>
+    <div class="row"><button id="setSave" class="primary" style="flex:1">Ayarları saxla</button></div>
+    <div class="info"><span id="peopleInfo">Tanınan şəxs yoxdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
+  </details>
+
   <div class="note" id="note"></div>
 </div>
 
@@ -77,32 +124,59 @@
   var dot = $('dot'), connText = $('connText'), connBtn = $('connBtn');
   var lastCmd = $('lastCmd'), lastVoice = $('lastVoice'), noteEl = $('note'), voiceBtn = $('voiceBtn');
   var keyInput = $('keyInput'), keySave = $('keySave'), modeInfo = $('modeInfo');
+  var nameInput = $('nameInput'), nameSave = $('nameSave'), botLine = $('botLine'), missionLine = $('missionLine');
+  var video = $('cam'), camHint = $('camHint'), camBtn = $('camBtn');
   var NAMES = { F:'İrəli', B:'Geri', L:'Sola', R:'Sağa', S:'Dayan' };
   var note = function (t) { noteEl.textContent = t || ''; };
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  // ---------- Yadda saxlanan ayarlar ----------
+  function sget(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var robotName = sget('robot_name', 'Ziko');
+  var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
+  var camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto');
+  var people = [];
+  try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
+  var apiKey = sget('gemini_key', '');
+  var goodModel = sget('gemini_model', '');
+
+  nameInput.value = robotName;
+  if (apiKey) keyInput.value = apiKey;
+  $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
+  $('camFacing').value = camFacing; $('ttsLang').value = ttsLang;
+
+  function updateMode() {
+    modeInfo.textContent = apiKey ? 'Gemini aktivdir' + (goodModel ? ' (' + goodModel + ')' : '') : 'Açar yoxdur: telefonun səs tanıması istifadə olunur';
+  }
+  function updatePeople() {
+    $('peopleInfo').textContent = people.length ? 'Tanınanlar: ' + people.map(function (p) { return p.name; }).join(', ') : 'Tanınan şəxs yoxdur';
+  }
+  updateMode(); updatePeople();
+
+  keySave.addEventListener('click', function () {
+    apiKey = keyInput.value.trim(); sset('gemini_key', apiKey);
+    updateMode(); note(apiKey ? 'Açar saxlanıldı' : 'Açar silindi');
+    if (voiceOn) stopVoice();
+  });
+  nameSave.addEventListener('click', function () {
+    var v = nameInput.value.trim();
+    if (!v) { note('Ad boş ola bilməz'); return; }
+    robotName = v; sset('robot_name', v); note('Robotun adı: ' + v);
+  });
+  $('setSave').addEventListener('click', function () {
+    turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
+    circleSteps = Math.max(4, +$('circleSteps').value || 12);
+    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value;
+    sset('turn_ms', turnMs); sset('fwd_ms', fwdMs); sset('circle_steps', circleSteps); sset('cam_facing', camFacing); sset('tts_lang', ttsLang);
+    note('Ayarlar saxlanıldı');
+    if (camStream) { stopCamera(); }
+  });
+  $('peopleClear').addEventListener('click', function () { people = []; sset('people', '[]'); updatePeople(); note('Tanınan şəxslər silindi'); });
 
   var BT = null, connected = false, devAddr = null, devName = '';
-  var PERMS = [
-    'android.permission.BLUETOOTH_CONNECT',
-    'android.permission.BLUETOOTH_SCAN',
-    'android.permission.ACCESS_FINE_LOCATION',
-    'android.permission.RECORD_AUDIO'
-  ];
-
-  // ---------- Saxlanmış API açarı ----------
-  var apiKey = '';
-  try { apiKey = localStorage.getItem('gemini_key') || ''; } catch (e) {}
-  if (apiKey) keyInput.value = apiKey;
-  function updateMode() {
-    modeInfo.textContent = apiKey ? 'Gemini ilə səs tanıma aktivdir' : 'Açar yoxdur: telefonun səs tanıması istifadə olunur';
-  }
-  updateMode();
-  keySave.addEventListener('click', function () {
-    apiKey = keyInput.value.trim();
-    try { localStorage.setItem('gemini_key', apiKey); } catch (e) {}
-    updateMode();
-    note(apiKey ? 'Açar saxlanıldı' : 'Açar silindi');
-    if (voiceOn) { stopVoice(); }
-  });
+  var PERM_BT = ['android.permission.BLUETOOTH_CONNECT', 'android.permission.BLUETOOTH_SCAN', 'android.permission.ACCESS_FINE_LOCATION'];
+  var PERM_MIC = 'android.permission.RECORD_AUDIO', PERM_CAM = 'android.permission.CAMERA';
 
   function setConnected(on, name) {
     connected = on;
@@ -111,17 +185,27 @@
     connBtn.textContent = on ? 'Ayır' : 'Bluetooth-a Qoşul';
   }
 
+  function permPlugin() { return window.cordova && cordova.plugins && cordova.plugins.permissions; }
   function askPermissions(done) {
-    var p = window.cordova && cordova.plugins && cordova.plugins.permissions;
+    var p = permPlugin();
     if (!p) return done();
-    p.requestPermissions(PERMS, function () { done(); }, function () { done(); });
+    p.requestPermissions(PERM_BT.concat([PERM_MIC, PERM_CAM]), function () { done(); }, function () { done(); });
+  }
+  function permAsync(perm) {
+    return new Promise(function (res) {
+      var p = permPlugin();
+      if (!p) return res(true);
+      p.checkPermission(perm, function (s) {
+        if (s && s.hasPermission) return res(true);
+        p.requestPermission(perm, function (s2) { res(!!(s2 && s2.hasPermission)); }, function () { res(false); });
+      }, function () { res(true); });
+    });
   }
 
   // ---------- Bluetooth (HC-05 / HC-06, classic SPP) ----------
   function ensureEnabled(ok, fail) {
     BT.isEnabled(ok, function () { BT.enable(ok, function () { fail('Bluetooth açılmadı'); }); });
   }
-
   function showPicker(devices, cb) {
     var list = $('pickList'); list.innerHTML = '';
     devices.forEach(function (d) {
@@ -133,7 +217,6 @@
     $('pickCancel').onclick = function () { $('picker').style.display = 'none'; note(''); };
     $('picker').style.display = 'flex';
   }
-
   function doConnect(d) {
     note('Qoşulur: ' + (d.name || d.address) + ' ...');
     BT.connect(d.address, [SPP], function () {
@@ -142,10 +225,10 @@
     }, function (err) {
       var was = connected;
       setConnected(false); devAddr = null;
+      if (was) abortMission();
       note(was ? 'Bağlantı kəsildi' : 'Qoşulmaq alınmadı. Robotun işə düşdüyünü və cütləşdiyini yoxlayın. ' + (err || ''));
     });
   }
-
   function connect() {
     if (!BT) { note('Bluetooth plugin tapılmadı. Tətbiq düzgün qurulmayıb.'); return; }
     askPermissions(function () {
@@ -158,12 +241,11 @@
       }, note);
     });
   }
-
   function disconnect() {
+    abortMission();
     if (BT && devAddr) BT.disconnect(devAddr, SPP, function () {}, function () {});
     setConnected(false); devAddr = null;
   }
-
   connBtn.addEventListener('click', function () { connected ? disconnect() : connect(); });
 
   function send(c) {
@@ -175,7 +257,7 @@
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
     var c = btn.dataset.c;
-    function down(e) { e.preventDefault(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
+    function down(e) { e.preventDefault(); if (mission) abortMission(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
     function up(e) { e.preventDefault(); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') send('S'); } }
     btn.addEventListener('pointerdown', down);
     btn.addEventListener('pointerup', up);
@@ -185,22 +267,381 @@
   });
 
   // =====================================================================
-  //  SƏS: 1) Gemini (açar varsa)   2) Telefonun səs tanıması (ehtiyat)
+  //  DANIŞIQ (TTS)
   // =====================================================================
-  var voiceOn = false;
+  var ttsActive = false, ttsBusyUntil = 0;
+  function pickLang() {
+    if (ttsLang !== 'auto') return ttsLang;
+    try {
+      var vs = speechSynthesis.getVoices() || [];
+      if (vs.some(function (v) { return /^az/i.test(v.lang || ''); })) return 'az-AZ';
+      if (vs.some(function (v) { return /^tr/i.test(v.lang || ''); })) return 'tr-TR';
+    } catch (e) {}
+    return 'az-AZ';
+  }
+  function speak(text) {
+    botLine.textContent = '🤖 ' + text;
+    return new Promise(function (resolve) {
+      var done = false;
+      function fin() { if (done) return; done = true; ttsActive = false; ttsBusyUntil = Date.now() + 700; if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle'); resolve(); }
+      ttsActive = true; ttsBusyUntil = Date.now() + 60000;
+      if (voiceOn) updateVoiceBtn('say');
+      if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+        setTimeout(fin, Math.min(4000, 800 + text.length * 40)); return;
+      }
+      try {
+        speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance(text), lang = pickLang();
+        u.lang = lang;
+        var vs = speechSynthesis.getVoices() || [];
+        var v = null, i;
+        for (i = 0; i < vs.length && !v; i++) if (String(vs[i].lang || '').replace('_', '-').toLowerCase() === lang.toLowerCase()) v = vs[i];
+        for (i = 0; i < vs.length && !v; i++) if (String(vs[i].lang || '').slice(0, 2).toLowerCase() === lang.slice(0, 2).toLowerCase()) v = vs[i];
+        if (v) u.voice = v;
+        u.onend = fin; u.onerror = fin;
+        speechSynthesis.speak(u);
+        setTimeout(fin, 3000 + text.length * 110);      // ehtiyat: onend gəlməsə
+      } catch (e) { setTimeout(fin, 1000); }
+    });
+  }
+
+  // =====================================================================
+  //  GEMINI (mətn, səs, şəkil)
+  // =====================================================================
+  // Köhnə model yeni açarlara bağlıdır (404). Sıra ilə işləyəni tapır və yadda saxlayır.
+  var MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+
+  function gUrl(model) { return 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey); }
+  function gText(j) {
+    try { return j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('').trim(); } catch (e) { return ''; }
+  }
+  async function gemini(parts, opts) {
+    opts = opts || {};
+    if (!apiKey) throw new Error('Gemini açarı yoxdur');
+    var list = goodModel ? [goodModel] : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false;
+    for (var i = 0; i < list.length; i++) {
+      var body = { contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 600 } };
+      if (opts.json && !noJson) body.generationConfig.responseMimeType = 'application/json';
+      var r;
+      try { r = await fetch(gUrl(list[i]), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+      catch (e) { throw new Error('Şəbəkə xətası. İnternet var?'); }
+      lastStatus = r.status;
+      if (r.ok) {
+        if (goodModel !== list[i]) { goodModel = list[i]; sset('gemini_model', goodModel); updateMode(); }
+        return gText(await r.json());
+      }
+      if (r.status === 404 || r.status === 503) continue;                       // model yoxdur / məşğuldur
+      if (r.status === 429 && retry429 < 3) { retry429++; note('Gemini limiti: gözləyirəm...'); await sleep(4000); i--; continue; }
+      if (r.status === 400 && opts.json && !noJson) { noJson = true; i--; continue; }  // JSON rejimi dəstəklənmirsə
+      throw new Error(r.status === 400 || r.status === 403 ? 'API açarı səhvdir və ya icazəsi yoxdur (' + r.status + ')'
+                    : r.status === 429 ? 'Gemini limiti dolub, bir az gözləyin (429)' : 'Gemini xətası (' + r.status + ')');
+    }
+    if (goodModel) { goodModel = ''; try { localStorage.removeItem('gemini_model'); } catch (e) {} return gemini(parts, opts); }
+    throw new Error('Heç bir Gemini modeli cavab vermədi (' + lastStatus + '). Açarı yoxlayın.');
+  }
+  function parseJSON(t) {
+    if (!t) return null;
+    t = String(t).replace(/```json|```/gi, '').trim();
+    try { return JSON.parse(t); } catch (e) {}
+    var a = t.indexOf('{'), b = t.lastIndexOf('}');
+    if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e2) {} }
+    return null;
+  }
+  function imgPart(b64) { return { inline_data: { mime_type: 'image/jpeg', data: b64 } }; }
+  function audioPart(b64) { return { inline_data: { mime_type: 'audio/wav', data: b64 } }; }
+
+  // =====================================================================
+  //  KAMERA
+  // =====================================================================
+  var camStream = null, cvs = document.createElement('canvas');
+  async function startCamera() {
+    if (camStream) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Kamera bu mühitdə dəstəklənmir'); return false; }
+    var ok = await permAsync(PERM_CAM);
+    if (!ok) { note('Kamera icazəsi YOXDUR. Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Kamera → İcazə ver.'); return false; }
+    var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    try { camStream = await gum({ video: { facingMode: { ideal: camFacing }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }); }
+    catch (e) {
+      try { camStream = await gum({ video: true, audio: false }); }
+      catch (e2) { note('Kamera açılmadı: ' + (e2 && e2.name ? e2.name : e2)); return false; }
+    }
+    video.srcObject = camStream;
+    try { await video.play(); } catch (e) {}
+    for (var i = 0; i < 40 && !video.videoWidth; i++) await sleep(100);
+    video.style.display = 'block'; camHint.style.display = 'none'; camBtn.textContent = '📷 Bağla';
+    await sleep(400);                                    // avtoparlaqlıq oturuşsun
+    return !!video.videoWidth;
+  }
+  function stopCamera() {
+    try { if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    camStream = null; video.srcObject = null; video.style.display = 'none'; camHint.style.display = ''; camBtn.textContent = '📷 Kamera';
+  }
+  function grabFrame(maxW, q) {
+    maxW = maxW || 640; q = q || 0.7;
+    var vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) throw new Error('Kameradan kadr gəlmir');
+    var s = Math.min(1, maxW / vw);
+    cvs.width = Math.round(vw * s); cvs.height = Math.round(vh * s);
+    cvs.getContext('2d').drawImage(video, 0, 0, cvs.width, cvs.height);
+    return cvs.toDataURL('image/jpeg', q).split(',')[1];
+  }
+  camBtn.addEventListener('click', function () { camStream ? stopCamera() : startCamera(); });
+
+  var lastVision = 0, visionGap = 900;
+  async function visionJSON(instruction, extraParts) {
+    var d = visionGap - (Date.now() - lastVision);
+    if (d > 0) await wait(d);
+    lastVision = Date.now();
+    var parts = [{ text: instruction }].concat(extraParts || []);
+    parts.push({ text: 'Current frame:' }); parts.push(imgPart(grabFrame()));
+    return parseJSON(await gemini(parts, { json: true, maxTokens: 700 })) || {};
+  }
+
+  // =====================================================================
+  //  TAPŞIRIQ MOTORU (Dayan düyməsi / "dayan" səsi həmişə dayandırır)
+  // =====================================================================
+  var mission = null, replyWaiter = null;
+  function setMissionLine(t) { missionLine.textContent = t || 'Tapşırıq yoxdur'; }
+  function chk() { if (mission && mission.abort) throw { abort: true }; }
+  async function wait(ms) { var end = Date.now() + ms; while (Date.now() < end) { chk(); await sleep(Math.max(1, Math.min(100, end - Date.now()))); } }
+  async function moveFor(cmd, ms) { chk(); send(cmd); await wait(ms); send('S'); await wait(450); }
+  function abortMission() {
+    if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
+    if (mission) { mission.abort = true; try { speechSynthesis.cancel(); } catch (e) {} }
+    if (connected) send('S');
+  }
+  async function runMission(title, fn) {
+    if (mission) { await speak('Əvvəlki tapşırıq davam edir. Dayan deyin.'); return; }
+    mission = { title: title, abort: false }; setMissionLine('▶ ' + title);
+    try { await fn(); }
+    catch (e) { if (!(e && e.abort)) { note(e && e.message ? e.message : 'Xəta'); await speak('Xəta oldu.'); } else { setMissionLine('⛔ Dayandırıldı'); } }
+    finally { if (connected) send('S'); mission = null; if (missionLine.textContent.indexOf('⛔') !== 0) setMissionLine(''); }
+  }
+  async function ensureReady(needMove) {
+    if (!apiKey) { note('Əvvəlcə Gemini açarını daxil edin'); await speak('Gemini açarı yoxdur.'); return false; }
+    if (needMove && !connected) { await speak('Robot Bluetooth-a qoşulmayıb.'); return false; }
+    if (!(await startCamera())) { await speak('Kamera açılmadı.'); return false; }
+    return true;
+  }
+
+  // Hədəfi tap və ona yaxınlaş. true = çatdı, false = tapılmadı
+  async function locate(target, refParts) {
+    var r = await visionJSON(
+      'TASK:LOCATE\nYou are the camera of a small wheeled robot. Target: "' + target + '".\n' +
+      'Decide whether the target is visible in the current frame. Reply ONLY JSON: {"found":true|false,"position":"left|center|right","distance":"far|medium|close","note":"short"}.\n' +
+      'position = horizontal position of the target (left third=left, middle third=center, right third=right). ' +
+      'distance: close = target fills at least about 60% of the frame height or is closer than about 1 meter; medium = about 1-3 meters; far = farther than 3 meters or small in the frame. ' +
+      'If you are not sure, found=false.', refParts);
+    r.found = (r.found === true || r.found === 'true');
+    return r;
+  }
+  async function seekAndApproach(target, refParts) {
+    var spun = 0, explored = 0;
+    for (var it = 0; it < 80; it++) {
+      chk();
+      var r = await locate(target, refParts);
+      if (r.found) {
+        setMissionLine('▶ ' + mission.title + ' — görürəm (' + (r.position || '?') + ', ' + (r.distance || '?') + ')');
+        if (r.distance === 'close') return true;
+        if (r.position === 'left') await moveFor('L', Math.round(turnMs * 0.5));
+        else if (r.position === 'right') await moveFor('R', Math.round(turnMs * 0.5));
+        else await moveFor('F', r.distance === 'medium' ? Math.round(fwdMs * 0.6) : fwdMs);
+        spun = 0;
+      } else {
+        setMissionLine('▶ ' + mission.title + ' — axtarıram...');
+        spun++;
+        if (spun > circleSteps) {                           // tam dövrə bitdi: irəli keç və yenidən axtar
+          explored++; spun = 0;
+          if (explored > 2) return false;
+          await moveFor('F', fwdMs * 2);
+        } else await moveFor('R', turnMs);
+      }
+    }
+    return false;
+  }
+
+  // ---------- Ssenari 1: Qapını tap ----------
+  async function missionDoor() {
+    if (!(await ensureReady(true))) return;
+    await speak('Qapını axtarıram.');
+    var ok = await seekAndApproach('a room door (door leaf or door frame)');
+    await speak(ok ? 'Qapıya çatdım.' : 'Qapını tapa bilmədim.');
+  }
+
+  // ---------- Ssenari 2: Adamın yanına get ----------
+  function norm(s) {
+    return String(s || '').toLocaleLowerCase('az')
+      .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
+      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ').replace(/\s+/g, ' ').trim();
+  }
+  function findPerson(name) {
+    var n = norm(name);
+    for (var i = 0; i < people.length; i++) { var pn = norm(people[i].name); if (pn === n || (pn.length > 2 && (n.indexOf(pn) === 0 || pn.indexOf(n) === 0))) return people[i]; }
+    return null;
+  }
+  function cap(s) { return s ? s.charAt(0).toLocaleUpperCase('az') + s.slice(1) : s; }
+  function personTarget(p) {
+    return (p.gender && p.gender !== 'naməlum' ? p.gender + ', ' : '') + (p.clothes || '') + (p.phone ? ', holding a phone' : '');
+  }
+  function distinguisher(p, list) {
+    var sameG = list.filter(function (q) { return q.gender === p.gender; });
+    if (p.gender && p.gender !== 'naməlum' && sameG.length === 1) return p.gender + ' şəxs';
+    var sameC = sameG.filter(function (q) { return norm(q.clothes) === norm(p.clothes); });
+    if (p.clothes && sameC.length === 1) return p.clothes + ' şəxs';
+    if (p.phone && sameG.filter(function (q) { return !!q.phone; }).length === 1) return 'telefonu əlində olan şəxs';
+    return ({ left: 'soldakı', center: 'ortadakı', right: 'sağdakı' }[p.position] || 'bu') + ' şəxs';
+  }
+
+  function listenOnce(ms) {
+    return new Promise(function (res) {
+      var t = setTimeout(function () { replyWaiter = null; res(''); }, ms);
+      replyWaiter = { res: res, t: t };
+    });
+  }
+  async function askUser(q) {
+    await speak(q);
+    chk();
+    if (voiceOn) updateVoiceBtn('idle');
+    return await listenOnce(12000);
+  }
+
+  async function scanForPeople() {
+    var spun = 0;
+    for (;;) {
+      chk();
+      var r = await visionJSON(
+        'TASK:PEOPLE\nList all real people visible in the current frame (ignore posters, photos and reflections). Reply ONLY JSON: ' +
+        '{"people":[{"gender":"kişi|qadın|naməlum","clothes":"short Azerbaijani phrase like \'qırmızı köynəkli\'","phone":true|false,"position":"left|center|right"}]}. ' +
+        'phone=true only if the person holds a phone in the hand.');
+      var list = (r.people || []).filter(Boolean);
+      if (list.length) return list;
+      spun++;
+      if (spun > circleSteps) return null;
+      setMissionLine('▶ ' + mission.title + ' — adam axtarıram...');
+      await moveFor('R', turnMs);
+    }
+  }
+
+  async function choosePerson(list) {
+    if (list.length === 1) return personTarget(list[0]);
+    var n = list.length, ds = list.map(function (p) { return distinguisher(p, list); });
+    var q;
+    var genders = list.map(function (p) { return p.gender; });
+    if (n === 2 && genders.indexOf('qadın') >= 0 && genders.indexOf('kişi') >= 0) {
+      q = 'Otaqda iki nəfər var, kimin yanına yaxınlaşım? Qadın yoxsa kişi?';
+    } else {
+      var allSame = genders.every(function (g) { return g === genders[0] && g !== 'naməlum'; });
+      q = 'Otaqda ' + (n === 2 ? 'iki' : n) + ' nəfər var' + (allSame ? ', hamısı ' + (genders[0] === 'qadın' ? 'qadındır' : 'kişidir') : '') + '. Kimin yanına yaxınlaşım? ' +
+          ds.map(function (d, i) { return (i === 0 ? cap(d) : d) + 'in yanına'; }).join(', yoxsa ') + '?';
+    }
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var reply = await askUser(q);
+      chk();
+      if (!reply) { q = 'Cavabı eşitmədim. ' + q; continue; }
+      var opts = list.map(function (p, i) { return (i + 1) + ') ' + ds[i] + ' (' + (p.gender || '') + ', ' + (p.clothes || '') + ')'; }).join('; ');
+      var c = parseJSON(await gemini([{ text: 'TASK:CHOICE\nThe robot asked the user: "' + q + '"\nOptions: ' + opts + '\nThe user replied: "' + reply + '"\n' +
+        'Which option did the user choose? Reply ONLY JSON: {"choice": number from 1 to ' + n + ', or 0 if unclear}' }], { json: true, maxTokens: 100 })) || {};
+      var k = parseInt(c.choice, 10);
+      if (k >= 1 && k <= n) return personTarget(list[k - 1]);
+      q = 'Başa düşmədim. ' + q;
+    }
+    return null;
+  }
+
+  async function missionPerson(name) {
+    if (!(await ensureReady(true))) return;
+    if (name) {
+      var p = findPerson(name);
+      if (!p) { await speak(name + ' adlı şəxsi tanımıram. Əvvəlcə mənə "Mənim adım ' + name + '" deyin.'); return; }
+      await speak(p.name + 'i axtarıram.');
+      var refs = [{ text: 'Reference photos of the person to find (' + p.name + '). Description: ' + p.desc + '. Find a person in the current frame who matches these reference photos / description by appearance (clothing, hair, glasses, build).' }]
+        .concat((p.imgs || []).map(imgPart));
+      var ok = await seekAndApproach('the person named ' + p.name + ' (' + p.desc + ')', refs);
+      await speak(ok ? p.name + ', yanınızdayam.' : p.name + 'i tapa bilmədim.');
+      return;
+    }
+    await speak('Adamı axtarıram.');
+    var list = await scanForPeople();
+    if (!list) { await speak('Heç kəsi görmürəm.'); return; }
+    var target = await choosePerson(list);
+    if (!target) { await speak('Seçimi başa düşmədim, dayanıram.'); return; }
+    var ok2 = await seekAndApproach('a person: ' + target);
+    await speak(ok2 ? 'Yanınızdayam.' : 'Yaxınlaşa bilmədim.');
+  }
+
+  // ---------- Tanış olmaq: üzü və adı yadda saxla ----------
+  async function introduce(name) {
+    if (!name) { await speak('Adınızı eşitmədim, təkrar deyin.'); return; }
+    if (!apiKey) { await speak('Gemini açarı yoxdur.'); return; }
+    if (!(await startCamera())) { await speak('Kamera açılmadı.'); return; }
+    await speak(name + ', çox şadam! Mənə baxın, sizi yadda saxlayıram.');
+    for (var a = 0; a < 3; a++) {
+      await sleep(1200);
+      var r = await visionJSON('TASK:INTRO\nHow many people are in the frame? If exactly one, describe them briefly in Azerbaijani (hair, glasses, beard, clothing) so they can be recognized later. Reply ONLY JSON: {"count":n,"desc":"..."}');
+      var cnt = parseInt(r.count, 10);
+      if (cnt === 1) {
+        var imgs = [grabFrame(320, 0.6)];
+        await sleep(700); try { imgs.push(grabFrame(320, 0.6)); } catch (e) {}
+        var ex = findPerson(name);
+        var rec = { name: name, desc: r.desc || '', imgs: imgs, ts: Date.now() };
+        if (ex) people[people.indexOf(ex)] = rec; else people.push(rec);
+        sset('people', JSON.stringify(people)); updatePeople();
+        await speak('Tanış olduq, ' + name + '. Sizi yadda saxladım.');
+        return;
+      }
+      await speak(cnt > 1 ? 'Kadrda bir neçə nəfər var. Zəhmət olmasa tək qalın.' : 'Sizi görə bilmirəm. Kameraya baxın.');
+    }
+    await speak('Üzünüzü yadda saxlaya bilmədim.');
+  }
+
+  // ---------- Ssenari 3: Ekrandakı sualı oxu ----------
+  async function missionScreen() {
+    if (!(await ensureReady(true))) return;
+    await speak('Kompüteri axtarıram.');
+    var ok = await seekAndApproach('a computer monitor or laptop screen showing text');
+    if (!ok) { await speak('Kompüteri tapa bilmədim.'); return; }
+    await speak('Ekrana çatdım, sualı oxuyuram.');
+    for (var a = 0; a < 3; a++) {
+      chk(); await wait(600);
+      var r = await visionJSON('TASK:SCREEN\nThe frame shows a computer screen. Read the question on the screen (and the answer options if any), then work out the correct answer. ' +
+        'Reply ONLY JSON in Azerbaijani: {"readable":true|false,"question":"...","answer":"short exact answer; include the option letter if options exist"}. If the text is unreadable, readable=false.');
+      if ((r.readable === true || r.readable === 'true') && r.answer) {
+        botLine.textContent = '🤖 Sual: ' + (r.question || '') + ' → ' + r.answer;
+        await speak('Düzgün cavab: ' + r.answer);
+        return;
+      }
+      if (a < 2) { await moveFor('F', Math.round(fwdMs * 0.3)); }
+    }
+    await speak('Ekrandakı yazını aydın oxuya bilmədim.');
+  }
+
+  // ---------- Ətrafa bax ----------
+  async function describeView(question) {
+    if (!apiKey) { note('Əvvəlcə Gemini açarını daxil edin'); return; }
+    if (!(await startCamera())) { await speak('Kamera açılmadı.'); return; }
+    var t = await gemini([{ text: 'TASK:DESCRIBE\nYou are the eye of a small robot. ' + (question ? 'The user asked: "' + question + '". Answer it.' : 'Say what you see in front of you.') +
+      ' Reply in Azerbaijani, at most 2 short sentences, plain text, no markdown, no emoji.' }, { text: 'Frame:' }, imgPart(grabFrame())], { maxTokens: 300 });
+    await speak(t || 'Heç nə görə bilmədim.');
+  }
+
+  // =====================================================================
+  //  SƏS: Gemini ilə dinləmə + çağırış (wake word) + marşrutlaşdırma
+  // =====================================================================
+  var voiceOn = false, activeUntil = 0;
   function updateVoiceBtn(state) {
     voiceBtn.classList.toggle('on', voiceOn);
     voiceBtn.classList.toggle('talk', voiceOn && state === 'talk');
+    voiceBtn.classList.toggle('say', voiceOn && state === 'say');
     if (!voiceOn) voiceBtn.textContent = '🎤 Səs idarəsi: Söndürülüb';
     else if (state === 'talk') voiceBtn.textContent = '🗣 Eşidirəm...';
     else if (state === 'send') voiceBtn.textContent = '⏳ Gemini düşünür...';
-    else voiceBtn.textContent = '🎤 Dinləyir... (dayandırmaq üçün bas)';
+    else if (state === 'say') voiceBtn.textContent = '🔊 ' + robotName + ' danışır...';
+    else voiceBtn.textContent = '🎤 Dinləyir: "' + robotName + '" deyin (dayandırmaq üçün bas)';
   }
 
-  // ---------- Gemini rejimi ----------
   var ctx = null, stream = null, srcNode = null, proc = null;
   var preRoll = [], speech = [], speaking = false, silenceMs = 0, speechMs = 0;
-  var noise = 0.008, busy = 0, lastSent = 0;
+  var noise = 0.008, busy = 0, curRate = 16000;
 
   function downsample(buf, inRate, outRate) {
     if (inRate === outRate) return buf;
@@ -239,101 +680,94 @@
     });
   }
 
-  var PROMPT =
-    'Sən robot maşının səs komandası tanıyıcısısan. Səsdə Azərbaycan dilində (bəzən türkcə və ya rusca) komanda var. ' +
-    'Komandalar: F = irəli, qabağa, düz get; B = geri, arxaya; L = sola, sola dön; R = sağa, sağa dön; S = dayan, dayandır, stop, saxla. ' +
-    'Əgər bir neçə komanda deyilibsə, YALNIZ SONUNCU komandanı seç. ' +
-    'Cavabı YALNIZ bu formatda ver: HƏRF|eşitdiyin söz. Məsələn: F|irəli get. ' +
-    'Əgər səsdə komanda yoxdursa, danışıq yoxdursa və ya aydın deyilsə: N|. ' +
-    'Başqa heç nə yazma.';
-
-  // Köhnə model yeni açarlara bağlıdır (404). Sıra ilə işləyəni tapır və yadda saxlayır.
-  var MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
-  var goodModel = '';
-  try { goodModel = localStorage.getItem('gemini_model') || ''; } catch (e) {}
-
-  function callModel(model, b64) {
-    var body = {
-      contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: 'audio/wav', data: b64 } }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 200 }
-    };
-    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    });
+  function routerPrompt(active) {
+    return 'TASK:ROUTER\nYou are the voice router of a small wheeled robot named "' + robotName + '". The audio contains ONE spoken utterance (Azerbaijani, sometimes Turkish or Russian). ' +
+      'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
+      'Session active (the user addressed the robot within the last 15 seconds): ' + (active ? 'true' : 'false') + '.\n' +
+      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","question":null|"...","answer":null|"..."}\n' +
+      'intent values:\n' +
+      '- "stop": stop / dayan / dayandır / saxla.\n' +
+      '- "drive": plain movement: irəli, qabağa (F); geri, arxaya (B); sola, sola dön (L); sağa, sağa dön (R). Set "drive". This works even without the robot name.\n' +
+      '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + robotName + '", "' + robotName + ' bura gəl").\n' +
+      '- "find_door": e.g. "qapıya yaxınlaş", "qapını tap".\n' +
+      '- "go_person": e.g. "gördüyün adamın yanına get", "Əlinin yanına get". If a specific person is named, put the BASE form of the name in "name" (Əlinin -> Əli), otherwise name=null.\n' +
+      '- "read_screen": e.g. "kompüterə yaxınlaş, ekrandakı sualı oxu və düzgün cavabı söylə".\n' +
+      '- "introduce": the user says their own name ("Mənim adım Əlidi", "Mən Leylayam"): put the base form of the name in "name".\n' +
+      '- "look": the user asks what the robot sees / to look around / asks about something visible ("nə görürsən?", "bu nədir?"). Put the question in "question" or null.\n' +
+      '- "ask": any other question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
+      '- "none": noise, silence, or speech not addressed to the robot.\n' +
+      'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop" and "drive", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
   }
 
-  function askGemini(wavBlob) {
-    return blobToBase64(wavBlob).then(function (b64) {
-      var list = goodModel ? [goodModel] : MODELS.slice();
-      var lastStatus = 0;
-      function next(i) {
-        if (i >= list.length) {
-          if (goodModel) { goodModel = ''; try { localStorage.removeItem('gemini_model'); } catch (e) {} return next0(); }
-          throw new Error('Heç bir Gemini modeli cavab vermədi (' + lastStatus + '). Açarı yoxlayın.');
-        }
-        return callModel(list[i], b64).then(function (r) {
-          lastStatus = r.status;
-          if (r.ok) {
-            goodModel = list[i];
-            try { localStorage.setItem('gemini_model', goodModel); } catch (e) {}
-            modeInfo.textContent = 'Gemini aktivdir (' + goodModel + ')';
-            return r.json();
-          }
-          if (r.status === 404 || r.status === 503) return next(i + 1);   // model yoxdur / məşğuldur: növbətini sına
-          var msg = r.status === 400 || r.status === 403 ? 'API açarı səhvdir və ya icazəsi yoxdur (' + r.status + ')'
-                  : r.status === 429 ? 'Gemini limiti dolub, bir az gözləyin (429)'
-                  : 'Gemini xətası (' + r.status + ')';
-          throw new Error(msg);
-        });
-      }
-      function next0() { list = MODELS.slice(); return next(0); }
-      return next(0);
-    }).then(function (j) {
-      var t = '';
-      try { t = j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join(''); } catch (e) {}
-      return String(t).trim();
-    });
+  async function transcribe(wav) {
+    var b64 = await blobToBase64(wav);
+    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' }, audioPart(b64)], { maxTokens: 150 });
+    return t.trim();
+  }
+
+  async function routeUtterance(wav) {
+    var b64 = await blobToBase64(wav);
+    var active = Date.now() < activeUntil;
+    var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 500 });
+    var r = parseJSON(t);
+    if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
+    lastVoice.textContent = String(r.heard || '—').slice(0, 40);
+    var intent = r.intent || 'none', needName = !(intent === 'stop' || intent === 'drive');
+    if (needName && !(r.called || active)) return;
+    if (mission && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S')) return;   // tapşırıq gedir
+    if (needName) activeUntil = Date.now() + 15000;
+
+    switch (intent) {
+      case 'stop': abortMission(); send('S'); note(''); break;
+      case 'drive':
+        if (/^[FBLRS]$/.test(r.drive || '')) { abortMission(); send(r.drive); note(''); }
+        break;
+      case 'call': await speak('Bəli, necə köməklik edə bilərəm?'); break;
+      case 'ask': if (r.answer) await speak(String(r.answer)); break;
+      case 'look': await describeView(r.question || ''); break;
+      case 'introduce': await runMission('Tanışlıq', function () { return introduce(r.name); }); break;
+      case 'find_door': await runMission('Qapını tap', missionDoor); break;
+      case 'go_person': await runMission('Adamın yanına get', function () { return missionPerson(r.name || null); }); break;
+      case 'read_screen': await runMission('Ekrandakı sualı oxu', missionScreen); break;
+      default: break;
+    }
   }
 
   function handleUtterance(chunks) {
-    var all = concat(chunks);
-    var pcm = downsample(all, curRate, 16000);
-    if (pcm.length < 16000 * 0.25) return;      // çox qısa səs-küy
+    var pcm = downsample(concat(chunks), curRate, 16000);
+    if (pcm.length < 16000 * 0.25) return;                // çox qısa səs-küy
+    var wav = toWav(pcm, 16000);
+    if (replyWaiter) {                                    // robot sual verib, cavab gözləyir
+      var w = replyWaiter; replyWaiter = null; clearTimeout(w.t);
+      busy++; updateVoiceBtn('send');
+      transcribe(wav).catch(function () { return ''; }).then(function (txt) { lastVoice.textContent = txt.slice(0, 40) || '—'; busy--; w.res(txt); });
+      return;
+    }
     busy++; updateVoiceBtn('send');
-    askGemini(toWav(pcm, 16000)).then(function (txt) {
-      var m = txt.match(/^\s*([FBLRSN])\s*\|?\s*(.*)$/i);
-      if (!m) { lastVoice.textContent = txt.slice(0, 24) || '—'; return; }
-      var c = m[1].toUpperCase(), heard = (m[2] || '').trim();
-      lastVoice.textContent = heard || (c === 'N' ? '(komanda yox)' : NAMES[c]);
-      if (c !== 'N') { send(c); note(''); } else { note('Komanda tanınmadı, yenidən deyin'); }
-    }).catch(function (e) {
+    routeUtterance(wav).catch(function (e) {
       note(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
-    }).then(function () {
-      busy--; if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
-    });
+    }).then(function () { busy--; if (voiceOn && !ttsActive) updateVoiceBtn(busy ? 'send' : 'idle'); });
   }
 
-  var curRate = 16000;
   function onAudio(e) {
     if (!voiceOn || !ctx) return;
     processChunk(new Float32Array(e.inputBuffer.getChannelData(0)), ctx.sampleRate);
   }
-
   function processChunk(chunk, rate) {
     if (!voiceOn) return;
+    if (ttsActive || Date.now() < ttsBusyUntil) { speaking = false; speech = []; preRoll = []; return; }   // robot öz səsini eşitməsin
     curRate = rate;
     var sum = 0, i; for (i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
     var rms = Math.sqrt(sum / chunk.length), ms = chunk.length / rate * 1000;
     var thr = Math.max(0.025, noise * 3.5);
-
     if (!speaking) {
-      noise = noise * 0.97 + rms * 0.03;             // fon səs-küyünü izlə
+      noise = noise * 0.97 + rms * 0.03;
       preRoll.push(chunk); if (preRoll.length > 8) preRoll.shift();
       if (rms > thr) { speaking = true; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; updateVoiceBtn('talk'); }
     } else {
       speech.push(chunk); speechMs += ms;
       if (rms > thr) silenceMs = 0; else silenceMs += ms;
-      if (silenceMs > 650 || speechMs > 5000) {
+      if (silenceMs > 650 || speechMs > 6000) {
         speaking = false;
         var s = speech; speech = []; silenceMs = 0;
         updateVoiceBtn(busy ? 'send' : 'idle');
@@ -342,61 +776,21 @@
     }
   }
 
-  // Mikrofon icazəsini ayrıca yoxla və lazım olsa xüsusi istə
-  function micPermission(cb) {
-    var p = window.cordova && cordova.plugins && cordova.plugins.permissions;
-    if (!p) return cb(true);
-    var REC = p.RECORD_AUDIO || 'android.permission.RECORD_AUDIO';
-    p.checkPermission(REC, function (s) {
-      if (s && s.hasPermission) return cb(true);
-      p.requestPermission(REC, function (s2) { cb(!!(s2 && s2.hasPermission)); }, function () { cb(false); });
-    }, function () { cb(true); });
-  }
+  function micPermission(cb) { permAsync(PERM_MIC).then(cb); }
 
-  // ---- Mikrofon üsulu 1: Cordova audioinput plugini (WebView-dan asılı deyil) ----
-  var pluginMic = false;
-  function onPluginAudio(evt) {
-    if (!voiceOn || !evt || !evt.data) return;
-    var d = evt.data, chunk;
-    if (d instanceof Float32Array) chunk = d;
-    else { chunk = new Float32Array(d.length); for (var i = 0; i < d.length; i++) chunk[i] = d[i] / 32767; }
-    processChunk(chunk, evt.sampleRate || 16000);
-  }
-  function startPluginMic() {
-    micPermission(function (ok) {
-      if (!ok) { note('Mikrofon icazəsi YOXDUR. Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver.'); return; }
-      try {
-        window.addEventListener('audioinput', onPluginAudio, false);
-        window.addEventListener('audioinputerror', function (e) { note('Mikrofon xətası: ' + (e && e.message ? e.message : '')); }, false);
-        audioinput.start({
-          sampleRate: 16000, bufferSize: 4096, channels: 1, format: 'PCM_16BIT',
-          normalize: true, normalizationFactor: 32767.0, audioSourceType: 1
-        });
-        pluginMic = true;
-        preRoll = []; speech = []; speaking = false; noise = 0.008;
-        voiceOn = true; updateVoiceBtn('idle'); note('');
-      } catch (e) {
-        window.removeEventListener('audioinput', onPluginAudio, false);
-        note('Mikrofon plugini açılmadı: ' + (e && e.message ? e.message : e));
-      }
-    });
-  }
-
+  // ---- Mikrofon: WebView getUserMedia (MODIFY_AUDIO_SETTINGS icazəsi ilə) ----
   function startGemini() {
-    if (window.audioinput) { startPluginMic(); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Mikrofon bu mühitdə dəstəklənmir'); return; }
     micPermission(function (ok) {
-      if (!ok) { note('Mikrofon icazəsi YOXDUR. Telefon: Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver. Sonra tətbiqi tam bağlayıb yenidən açın.'); return; }
-      // Bəzi telefonlar əlavə ayarlarla (səs-küy azaltma) mikrofonu açmır: əvvəl sadə, sonra ayarlı cəhd
-      var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-      var tries = 0;
+      if (!ok) { note('Mikrofon icazəsi YOXDUR. Ayarlar → Tətbiqlər → Robot Pultu → İcazələr → Mikrofon → İcazə ver.'); return; }
+      var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices), tries = 0;
       function attempt() {
         tries++;
         var c = (tries % 2) ? { audio: true } : { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
         return gum(c).catch(function (e) {
           if (tries >= 4) throw e;
           note('Mikrofon cəhdi ' + tries + '/4 ...');
-          return new Promise(function (r) { setTimeout(r, 900); }).then(attempt);
+          return sleep(900).then(attempt);
         });
       }
       note('Mikrofon açılır...');
@@ -416,11 +810,6 @@
     });
   }
   function stopGemini() {
-    if (pluginMic) {
-      pluginMic = false;
-      try { window.removeEventListener('audioinput', onPluginAudio, false); } catch (e) {}
-      try { audioinput.stop(function () {}); } catch (e) {}
-    }
     try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
     try { if (srcNode) srcNode.disconnect(); } catch (e) {}
     try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
@@ -428,13 +817,8 @@
     proc = srcNode = stream = ctx = null; speaking = false; speech = []; preRoll = [];
   }
 
-  // ---------- Ehtiyat: telefonun səs tanıması ----------
+  // ---------- Ehtiyat: telefonun səs tanıması (yalnız hərəkət komandaları) ----------
   var LANG = 'az-AZ', errCount = 0;
-  function norm(s) {
-    return s.toLocaleLowerCase('az')
-      .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
-      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ');
-  }
   var RULES = [
     ['S', ['dayandir', 'dayan', 'stop', 'sakit']],
     ['F', ['ireli', 'qabaga', 'qabag']],
@@ -476,7 +860,7 @@
     }, function () { note('Mikrofon icazəsi verilməyib'); });
   }
 
-  // ---------- Ümumi düymə ----------
+  // ---------- Ümumi düymələr ----------
   function startVoice() { apiKey ? startGemini() : startNative(); }
   function stopVoice() {
     voiceOn = false; updateVoiceBtn();
@@ -485,19 +869,34 @@
   }
   voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
 
+  function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) note(e && e.message ? e.message : 'Xəta'); }); }; }
+  $('lookBtn').addEventListener('click', guarded(function () { return describeView(''); }));
+  $('doorBtn').addEventListener('click', guarded(function () { return runMission('Qapını tap', missionDoor); }));
+  $('personBtn').addEventListener('click', guarded(function () { return runMission('Adamın yanına get', function () { return missionPerson(null); }); }));
+  $('screenBtn').addEventListener('click', guarded(function () { return runMission('Ekrandakı sualı oxu', missionScreen); }));
+  $('abortBtn').addEventListener('click', function () { abortMission(); send('S'); });
+
   // ---------- Başlanğıc ----------
   document.addEventListener('deviceready', function () {
     BT = window.bluetoothClassicSerial || null;
     if (!BT) note('Bluetooth plugin yüklənməyib');
     askPermissions(function () {});
   }, false);
-
-  document.addEventListener('pause', function () { if (connected) send('S'); if (voiceOn) stopVoice(); }, false);
+  document.addEventListener('pause', function () { abortMission(); if (connected) send('S'); if (voiceOn) stopVoice(); stopCamera(); }, false);
 
   setTimeout(function () {
     if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
   }, 1500);
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v7 ✓';
+
+  // yoxlama üçün (testlər): istifadəçi interfeysinə təsir etmir
+  window.__robotTest = {
+    route: function () { return routeUtterance(new Blob([new Uint8Array(100)], { type: 'audio/wav' })); },
+    handleUtterance: function () { handleUtterance([new Float32Array(16000)]); },
+    setBT: function (b) { BT = b; }, setVisionGap: function (g) { visionGap = g; },
+    setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
+    state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
+  };
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v8 ✓';
 })();
 </script>
 </body>
