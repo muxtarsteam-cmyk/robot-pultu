@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v9</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v10</span></h1>
 
   <div class="card">
     <div class="status">
@@ -109,6 +109,8 @@
       <select id="camFacing"><option value="environment">Arxa kamera</option><option value="user">Ön kamera</option></select></div>
     <div class="row"><label for="ttsLang">Danışıq dili</label>
       <select id="ttsLang"><option value="auto">Avtomatik</option><option value="az-AZ">az-AZ</option><option value="tr-TR">tr-TR</option><option value="ru-RU">ru-RU</option><option value="en-US">en-US</option></select></div>
+    <div class="row"><label for="ttsEngine">Səs mühərriki</label>
+      <select id="ttsEngine"><option value="auto">Avtomatik (internet səsi əvvəl)</option><option value="device">Yalnız telefon səsi</option></select></div>
     <div class="row"><button id="setSave" class="primary" style="flex:1">Ayarları saxla</button></div>
     <div class="info"><span id="peopleInfo">Tanınan şəxs yoxdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
   </details>
@@ -147,7 +149,7 @@
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
-  var camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto');
+  var camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var apiKey = sget('gemini_key', '');
@@ -156,7 +158,7 @@
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
   $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
-  $('camFacing').value = camFacing; $('ttsLang').value = ttsLang;
+  $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine;
 
   function updateMode() {
     modeInfo.textContent = apiKey ? 'Gemini aktivdir' + (goodModel ? ' (' + goodModel + ')' : '') : 'Açar yoxdur: telefonun səs tanıması istifadə olunur';
@@ -179,7 +181,7 @@
   $('setSave').addEventListener('click', function () {
     turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
     circleSteps = Math.max(4, +$('circleSteps').value || 12);
-    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value;
+    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; sset('tts_engine', ttsEngine);
     sset('turn_ms', turnMs); sset('fwd_ms', fwdMs); sset('circle_steps', circleSteps); sset('cam_facing', camFacing); sset('tts_lang', ttsLang);
     note('Ayarlar saxlanıldı');
     if (camStream) { stopCamera(); }
@@ -294,54 +296,150 @@
   }
   ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlockTTS, { passive: true }); });
 
-  function findVoice(lang) {
-    var l = lang.toLowerCase(), i, v;
-    for (i = 0; i < ttsVoices.length; i++) { v = ttsVoices[i]; if (String(v.lang || '').replace('_', '-').toLowerCase() === l) return v; }
-    for (i = 0; i < ttsVoices.length; i++) { v = ttsVoices[i]; if (String(v.lang || '').slice(0, 2).toLowerCase() === l.slice(0, 2)) return v; }
-    return null;
+  // Keyfiyyətli səsə üstünlük: "Google", "Natural", "Neural", şəbəkə səsləri
+  function voiceScore(v) {
+    var n = String(v.name || ''), sc = 0;
+    if (/google|natural|neural|wavenet|enhanced|premium/i.test(n)) sc += 2;
+    if (v.localService === false) sc += 1;
+    return sc;
   }
-  // Azərbaycan səsini tapır; yoxdursa türk səsinə keçir
+  function findVoice(lang) {
+    var l = lang.toLowerCase(), best = null, bs = -1, i, v, sc;
+    for (i = 0; i < ttsVoices.length; i++) {
+      v = ttsVoices[i];
+      var vl = String(v.lang || '').replace('_', '-').toLowerCase();
+      if (vl === l) sc = 10 + voiceScore(v); else if (vl.slice(0, 2) === l.slice(0, 2)) sc = 5 + voiceScore(v); else continue;
+      if (sc > bs) { bs = sc; best = v; }
+    }
+    return best;
+  }
+  // Cihaz səsi: az-AZ varsa o, yoxdursa tr-TR (daha təbii), sonra istənilən mövcud səs
   function pickLang() {
     if (ttsLang !== 'auto') return ttsLang;
     if (findVoice('az-AZ')) return 'az-AZ';
     if (!voiceWarned) { voiceWarned = true; note('Telefonda Azərbaycan səsi yoxdur, türk səsi ilə danışacağam'); }
     return 'tr-TR';
   }
-  function speak(text) {
-    text = String(text || '');
-    botLine.textContent = '🤖 ' + text;
+
+  // ---------- Mətn normallaşdırıcı (səsləndirməzdən əvvəl) ----------
+  function normalizeSpeech(t, forTurkish) {
+    t = String(t || '');
+    t = t.replace(/```[\s\S]*?```/g, ' ').replace(/`([^`]*)`/g, '$1');
+    t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');      // markdown şəkil/link
+    t = t.replace(/https?:\/\/\S+|www\.\S+/gi, ' ');                                             // linklər
+    t = t.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{2B00}-\u{2BFF}]/gu, ' '); // emoji
+    t = t.replace(/^\s{0,3}#{1,6}\s*/gm, '').replace(/^\s*[-*•]\s+/gm, '').replace(/[*_~#>|^\\]+/g, ' '); // markdown
+    t = t.replace(/(\d)\s*%/g, '$1 faiz').replace(/%/g, ' faiz ');
+    t = t.replace(/(\d)\s*°\s*C?/g, '$1 dərəcə').replace(/\+/g, ' plus ').replace(/\s=\s|=/g, ' bərabərdir ').replace(/\s*&\s*/g, ' və ');
+    t = t.replace(/(\d)\s*[x×*]\s*(\d)/g, '$1 vurulsun $2').replace(/(\d)\s*[\/÷]\s*(\d)/g, '$1 bölünsün $2');
+    t = t.replace(/[()\[\]{}<>«»"“”„]/g, ', ').replace(/[;:]/g, ',').replace(/\.{2,}|…/g, '.').replace(/[-–—]+/g, ' ');
+    t = t.replace(/\s*[\n\r]+\s*/g, '. ').replace(/([,.!?])\1+/g, '$1').replace(/,\s*([.!?])/g, '$1').replace(/[^\p{L}\p{N}\s,.!?]/gu, ' ');
+    if (forTurkish) {                       // Türk sintezatoru Azərbaycan hərflərini səhv oxuyur
+      t = t.replace(/ə/g, 'e').replace(/Ə/g, 'E')
+           .replace(/x/g, 'h').replace(/X/g, 'H')
+           .replace(/q/g, 'g').replace(/Q/g, 'G')
+           .replace(/w/g, 'v').replace(/W/g, 'V');
+    }
+    return t.replace(/\s+/g, ' ').replace(/\s+([,.!?])/g, '$1').trim();
+  }
+  function splitChunks(t, max) {
+    var out = [], parts = t.match(/[^.!?]+[.!?]?/g) || [t], cur = '';
+    parts.forEach(function (p) {
+      p = p.trim(); if (!p) return;
+      while (p.length > max) {
+        var cut = p.lastIndexOf(' ', max); if (cut < 20) cut = max;
+        if (cur) { out.push(cur); cur = ''; }
+        out.push(p.slice(0, cut).trim()); p = p.slice(cut).trim();
+      }
+      if ((cur + ' ' + p).trim().length > max) { if (cur) out.push(cur); cur = p; } else cur = (cur + ' ' + p).trim();
+    });
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  // ---------- Onlayn səs (Google Translate TTS, az) ----------
+  var curAudio = null, speakToken = 0, onlineFails = 0;
+  function stopSpeech() {
+    speakToken++;
+    var a = curAudio; curAudio = null;
+    if (a) { try { a.pause(); } catch (e) {} try { a.onended && a.onended(); } catch (e) {} }
+    try { speechSynthesis.cancel(); } catch (e) {}
+    try { window.TTS && window.TTS.speak && window.TTS.speak({ text: '', locale: 'az-AZ' }, function () {}, function () {}); } catch (e) {}
+  }
+  // true = oxudu; false = heç başlamadı (cihaz səsinə keç)
+  function playOnline(chunks, token) {
     return new Promise(function (resolve) {
-      var done = false, lang = pickLang(), plugin = window.TTS && typeof window.TTS.speak === 'function';
-      function fin() { if (done) return; done = true; ttsActive = false; ttsBusyUntil = Date.now() + 700; if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle'); resolve(); }
-      ttsActive = true; ttsBusyUntil = Date.now() + 60000;
-      if (voiceOn) updateVoiceBtn('say');
-      var guard = setTimeout(fin, 4000 + text.length * 120);
-      function finAll() { clearTimeout(guard); fin(); }
+      var i = 0, started = false, settled = false;
+      function end(v) { if (settled) return; settled = true; resolve(v); }
+      function fail() { onlineFails++; end(started); }
+      function next() {
+        if (token !== speakToken || i >= chunks.length) return end(true);
+        var a = new Audio(), to;
+        curAudio = a; a.preload = 'auto';
+        a.src = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=az&q=' + encodeURIComponent(chunks[i]);
+        to = setTimeout(function () { a.onerror = null; a.onended = null; try { a.pause(); } catch (e) {} fail(); }, 8000);
+        a.onplaying = function () { started = true; onlineFails = 0; clearTimeout(to); };
+        a.onended = function () { clearTimeout(to); i++; next(); };
+        a.onerror = function () { clearTimeout(to); fail(); };
+        var p = a.play();
+        if (p && p.catch) p.catch(function () { clearTimeout(to); fail(); });
+      }
+      next();
+    });
+  }
+
+  // ---------- Cihaz səsi (rate 0.95, pitch 1.0) ----------
+  function speakDevice(text, lang) {
+    return new Promise(function (resolve) {
+      var done = false, plugin = window.TTS && typeof window.TTS.speak === 'function';
+      var guard = setTimeout(fin, 4000 + text.length * 130);
+      function fin() { if (done) return; done = true; clearTimeout(guard); resolve(); }
       function viaWeb() {
         if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
           if (!voiceWarned) { voiceWarned = true; note('Bu telefonda səs sintezi yoxdur. Cavab yalnız yazılı göstərilir.'); }
-          setTimeout(finAll, Math.min(3000, 600 + text.length * 40)); return;
+          setTimeout(fin, Math.min(3000, 600 + text.length * 40)); return;
         }
         try {
           loadVoices();
           try { speechSynthesis.cancel(); speechSynthesis.resume(); } catch (e) {}
           var u = new SpeechSynthesisUtterance(text);
-          u.lang = lang; u.volume = 1; u.rate = 1; u.pitch = 1;
-          var v = findVoice(lang); if (v) u.voice = v;
-          u.onend = finAll; u.onerror = function () { finAll(); };
+          u.lang = lang; u.volume = 1; u.rate = 0.95; u.pitch = 1.0;
+          var v = findVoice(lang) || findVoice('tr-TR') || findVoice('az-AZ'); if (v) u.voice = v;
+          u.onend = fin; u.onerror = fin;
           speechSynthesis.speak(u);
-        } catch (e) { setTimeout(finAll, 800); }
+        } catch (e) { setTimeout(fin, 800); }
       }
       if (plugin) {
         try {
-          window.TTS.speak({ text: text, locale: lang, rate: 1 }, finAll, function () {
+          window.TTS.speak({ text: text, locale: lang, rate: 0.95 }, fin, function () {
             if (lang !== 'tr-TR' && ttsLang === 'auto') {
-              try { window.TTS.speak({ text: text, locale: 'tr-TR', rate: 1 }, finAll, viaWeb); } catch (e) { viaWeb(); }
+              try { window.TTS.speak({ text: text, locale: 'tr-TR', rate: 0.95 }, fin, viaWeb); } catch (e) { viaWeb(); }
             } else viaWeb();
           });
         } catch (e) { viaWeb(); }
       } else viaWeb();
     });
+  }
+
+  async function speak(text) {
+    text = String(text || '');
+    botLine.textContent = '🤖 ' + text;
+    stopSpeech();
+    var token = speakToken;
+    ttsActive = true; ttsBusyUntil = Date.now() + 90000;
+    if (voiceOn) updateVoiceBtn('say');
+    try {
+      var played = false;
+      if (ttsEngine === 'auto' && onlineFails < 3 && navigator.onLine !== false) {
+        var clean = normalizeSpeech(text, false);
+        if (clean) played = await playOnline(splitChunks(clean, 180), token);
+      }
+      if (!played && token === speakToken) {
+        var lang = pickLang(), clean2 = normalizeSpeech(text, /^tr/i.test(lang));
+        if (clean2) await speakDevice(clean2, lang);
+      }
+    } catch (e) {}
+    if (token === speakToken) { ttsActive = false; ttsBusyUntil = Date.now() + 700; if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle'); }
   }
   $('ttsTest').addEventListener('click', function () { unlockTTS(); speak('Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.'); });
 
@@ -447,7 +545,7 @@
   async function moveFor(cmd, ms) { chk(); send(cmd); await wait(connected ? ms : Math.min(ms, 200)); send('S'); await wait(connected ? 450 : 100); }
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
-    if (mission) { mission.abort = true; try { speechSynthesis.cancel(); } catch (e) {} }
+    if (mission) { mission.abort = true; stopSpeech(); ttsActive = false; }
     if (connected) send('S');
   }
   async function runMission(title, fn) {
@@ -934,9 +1032,9 @@
     handleUtterance: function () { handleUtterance([new Float32Array(16000)]); },
     setBT: function (b) { BT = b; }, setVisionGap: function (g) { visionGap = g; },
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
-    ttsTest: function () { return speak('Test'); }, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
+    ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v9 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v10 ✓';
 })();
 </script>
 </body>
