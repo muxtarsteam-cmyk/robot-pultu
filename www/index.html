@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v13</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v14</span></h1>
 
   <div class="card">
     <div class="status">
@@ -97,6 +97,10 @@
         <button id="abortBtn" style="background:var(--stop)">⛔ Dayandır</button>
       </div>
     </div>
+    <div class="row"><input id="memName" type="text" placeholder="Adı (məs. ürək fincan)" autocomplete="off">
+      <select id="memKind" style="flex:0 0 78px"><option value="object">Əşya</option><option value="person">Şəxs</option></select>
+      <button id="memSave">💾</button></div>
+    <div class="row"><button id="idBtn" style="flex:1">🏷 Bu nədir? / Bu kimdir?</button></div>
     <div class="info"><span id="missionLine">Tapşırıq yoxdur</span></div>
   </div>
 
@@ -115,7 +119,7 @@
     <div class="row"><label for="ttsVoice">Gemini səsi</label>
       <select id="ttsVoice"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
     <div class="row"><button id="setSave" class="primary" style="flex:1">Ayarları saxla</button></div>
-    <div class="info"><span id="peopleInfo">Tanınan şəxs yoxdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
+    <div class="info"><span id="peopleInfo">Yaddaş boşdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
   </details>
 
   <div class="sim" id="simLine"></div>
@@ -155,6 +159,8 @@
   var pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
+  var things = [];
+  try { things = JSON.parse(sget('things', '[]')) || []; } catch (e) { things = []; }
   var apiKey = sget('gemini_key', '');
   var goodModel = sget('gemini_model', '');
 
@@ -167,7 +173,8 @@
     modeInfo.textContent = apiKey ? 'Gemini aktivdir' + (goodModel ? ' (' + goodModel + ')' : '') : 'Açar yoxdur: telefonun səs tanıması istifadə olunur';
   }
   function updatePeople() {
-    $('peopleInfo').textContent = people.length ? 'Tanınanlar: ' + people.map(function (p) { return p.name; }).join(', ') : 'Tanınan şəxs yoxdur';
+    var all = people.map(function (p) { return '👤' + p.name; }).concat(things.map(function (p) { return '📦' + p.name; }));
+    $('peopleInfo').textContent = all.length ? 'Yaddaş: ' + all.join(', ') : 'Yaddaş boşdur';
   }
   updateMode(); updatePeople();
 
@@ -190,7 +197,7 @@
     note('Ayarlar saxlanıldı');
     if (camStream) { stopCamera(); }
   });
-  $('peopleClear').addEventListener('click', function () { people = []; sset('people', '[]'); updatePeople(); note('Tanınan şəxslər silindi'); });
+  $('peopleClear').addEventListener('click', function () { people = []; things = []; sset('people', '[]'); sset('things', '[]'); updatePeople(); note('Yaddaş təmizləndi'); });
 
   var BT = null, connected = false, devAddr = null, devName = '';
   var PERM_BT = ['android.permission.BLUETOOTH_CONNECT', 'android.permission.BLUETOOTH_SCAN', 'android.permission.ACCESS_FINE_LOCATION'];
@@ -849,6 +856,89 @@
     await speak('Üzünüzü yadda saxlaya bilmədim.');
   }
 
+  // =====================================================================
+  //  VİZUAL YADDAŞ: əşya / şəxs adlandırma və tanıma
+  // =====================================================================
+  function findIn(list, name) {
+    var n = norm(name);
+    for (var i = 0; i < list.length; i++) { var pn = norm(list[i].name); if (pn === n) return list[i]; }
+    for (i = 0; i < list.length; i++) { pn = norm(list[i].name); if (pn.length > 2 && (n.indexOf(pn) === 0 || pn.indexOf(n) === 0)) return list[i]; }
+    return null;
+  }
+  function persist() {
+    try { localStorage.setItem('people', JSON.stringify(people)); localStorage.setItem('things', JSON.stringify(things)); return true; }
+    catch (e) { return false; }
+  }
+  function saveMemory(kind, name, desc, imgs) {
+    var list = kind === 'person' ? people : things;
+    var rec = { name: name, desc: desc || '', imgs: imgs || [], ts: Date.now() };
+    var ex = findIn(list, name);
+    if (ex) list[list.indexOf(ex)] = rec; else list.push(rec);
+    while (list.length > 30) list.shift();
+    if (!persist()) {                       // yer çatmasa şəkilləri azalt
+      rec.imgs = rec.imgs.slice(0, 1);
+      if (!persist()) { list.pop(); persist(); throw new Error('Yaddaşda yer qalmayıb. Ayarlardan yaddaşı təmizləyin.'); }
+    }
+    updatePeople();
+  }
+
+  // "Bu fincandır, adı 'ürək fincan' olacaq, yadında saxla" / "Bu Əlidir, yadında saxla"
+  async function rememberSubject(name, kind) {
+    name = String(name || '').trim();
+    if (!name) { await speak('Adını eşitmədim. Təkrar deyin.'); return; }
+    kind = kind === 'person' ? 'person' : 'object';
+    if (!apiKey) { warn('Gemini açarı yoxdur'); return; }
+    if (!(await startCamera())) return;
+    await sleep(300);
+    var r = await visionJSON('TASK:REMEMBER\nThe user holds up or points the camera at ' + (kind === 'person' ? 'a person' : 'an object') +
+      ' and calls it "' + name + '". Describe the main ' + (kind === 'person' ? 'person' : 'item') + ' in the centre of the frame in ONE short Azerbaijani sentence with the most distinctive visual features ' +
+      '(color, shape, pattern, text, clothing, hair, glasses). Reply ONLY JSON: {"ok":true|false,"desc":"..."}. ok=false if the frame is empty or shows several unrelated things.');
+    if (!(r.ok === true || r.ok === 'true')) { await speak('Kadrda aydın bir ' + (kind === 'person' ? 'şəxs' : 'əşya') + ' görmürəm. Onu kameraya yaxın tutun.'); return; }
+    var imgs = [grabFrame(320, 0.6)];
+    await sleep(600); try { imgs.push(grabFrame(320, 0.6)); } catch (e) {}
+    saveMemory(kind, name, r.desc || '', imgs);
+    await speak('Bəli, ' + name + ' olaraq yadda saxladım.');
+  }
+
+  // "Bu nədir?" / "Bu kimdir?" : əvvəl yaddaş, sonra Gemini Vision
+  async function identifySubject() {
+    if (!apiKey) { warn('Gemini açarı yoxdur'); return; }
+    if (!(await startCamera())) return;
+    await sleep(300);
+    var frame = grabFrame(), refs = [], pool = people.map(function (x) { return { k: 'person', x: x }; })
+      .concat(things.map(function (x) { return { k: 'object', x: x }; })).slice(-14);
+    pool.forEach(function (it, i) {
+      if (it.x.imgs && it.x.imgs[0]) {
+        refs.push({ text: 'Reference #' + (i + 1) + ': "' + it.x.name + '" (' + it.k + '). ' + (it.x.desc || '') });
+        refs.push(imgPart(it.x.imgs[0]));
+      }
+    });
+    var instruction = 'TASK:IDENTIFY\nYou are the eye of a home robot. Look at the CURRENT frame and name the main thing/person the user is showing.\n' +
+      (refs.length ? 'The user previously taught you the reference items below (name + photo). If the current frame shows the SAME specific item/person as one of them, put its exact name in "match".\n' : 'No items have been taught yet, so match=null.\n') +
+      'Reply ONLY JSON: {"match":"exact reference name or null","confidence":0.0-1.0,"kind":"object|person","description":"what it generally is, one short Azerbaijani sentence"}. ' +
+      'Be strict: a different cup of the same type is NOT a match unless it clearly looks like the reference.';
+    var parts = [{ text: instruction }].concat(refs, [{ text: 'CURRENT frame:' }, imgPart(frame)]);
+    var r = parseJSON(await gemini(parts, { json: true, maxTokens: 500 })) || {};
+    var hit = null;
+    if (r.match && r.match !== 'null' && parseFloat(r.confidence) >= 0.6) {
+      for (var i = 0; i < pool.length; i++) if (norm(pool[i].x.name) === norm(r.match)) { hit = pool[i]; break; }
+    }
+    if (hit) {
+      await speak(hit.k === 'person' ? 'Bu sənin əvvəlcədən tanıtdığın şəxsdir. Adı: ' + hit.x.name + '.' : 'Bu sənin əvvəlcədən adlandırdığın əşyadır. Adı: ' + hit.x.name + '.');
+      return;
+    }
+    var desc = r.description || 'tanımadığım bir şey';
+    var q = 'Bunu əvvəl görməmişəm. Bu, ' + String(desc).replace(/[.!?]+$/, '') + ' kimi görünür. Adını nə qoyaq?';
+    var reply = await askUser(q);
+    if (!reply) return;
+    var nm = parseJSON(await gemini([{ text: 'TASK:NAME\nThe robot asked the user to name the thing in front of the camera. The user replied: "' + reply + '"\n' +
+      'Extract only the chosen name in its base form (for example "adı ürək fincan olsun" -> "ürək fincan"). Reply ONLY JSON: {"name":"..."} or {"name":null} if the user gave no name / said no / does not know.' }], { json: true, maxTokens: 100 })) || {};
+    if (!nm.name) { await speak('Yaxşı, yadda saxlamıram.'); return; }
+    var kind = r.kind === 'person' ? 'person' : 'object';
+    saveMemory(kind, String(nm.name), desc, [frame]);
+    await speak('Bəli, ' + nm.name + ' olaraq yadda saxladım.');
+  }
+
   // ---------- Ssenari 3: Ekrandakı sualı oxu ----------
   async function missionScreen() {
     if (!(await ensureReady(true))) return;
@@ -939,7 +1029,7 @@
     return 'TASK:ROUTER\nYou are the voice router of a small wheeled robot named "' + robotName + '". The audio contains ONE spoken utterance (Azerbaijani, sometimes Turkish or Russian). ' +
       'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
       'Session active (the user addressed the robot within the last 15 seconds): ' + (active ? 'true' : 'false') + '.\n' +
-      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","question":null|"...","answer":null|"..."}\n' +
+      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
       'intent values:\n' +
       '- "stop": stop / dayan / dayandır / saxla.\n' +
       '- "drive": plain movement: irəli, qabağa (F); geri, arxaya (B); sola, sola dön (L); sağa, sağa dön (R). Set "drive". This works even without the robot name.\n' +
@@ -948,7 +1038,9 @@
       '- "go_person": e.g. "gördüyün adamın yanına get", "Əlinin yanına get". If a specific person is named, put the BASE form of the name in "name" (Əlinin -> Əli), otherwise name=null.\n' +
       '- "read_screen": e.g. "kompüterə yaxınlaş, ekrandakı sualı oxu və düzgün cavabı söylə".\n' +
       '- "introduce": the user says their own name ("Mənim adım Əlidi", "Mən Leylayam"): put the base form of the name in "name".\n' +
-      '- "look": the user asks what the robot sees / to look around / asks about something visible ("nə görürsən?", "bu nədir?"). Put the question in "question" or null.\n' +
+      '- "remember": the user shows something to the camera and TEACHES its name ("Bu fincandır, adı ürək fincan olacaq, yadında saxla", "Bu Əlidir, yadında saxla"). Put the NAME the user wants to give (the custom name, base form, without quotes) in "name", and "kind":"person" if it is a person, otherwise "object".\n' +
+      '- "identify": the user shows something and asks what/who it is or what its name is ("bu nədir?", "bunun adı nədir?", "bu kimdir?", "tanıyırsan?").\n' +
+      '- "look": the user asks what the robot sees in general / to look around / asks something else about the view ("nə görürsən?", "ətrafa bax"). Put the question in "question" or null.\n' +
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
       '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
       '- "none": noise, silence, or speech not addressed to the robot.\n' +
@@ -991,6 +1083,8 @@
       case 'call': await speak('Bəli, necə köməklik edə bilərəm?'); break;
       case 'ask': if (r.answer) await speak(String(r.answer)); break;
       case 'long': await longReply(b64, r.heard); break;
+      case 'remember': await rememberSubject(r.name, r.kind); break;
+      case 'identify': await identifySubject(); break;
       case 'look': await describeView(r.question || ''); break;
       case 'introduce': await runMission('Tanışlıq', function () { return introduce(r.name); }); break;
       case 'find_door': await runMission('Qapını tap', missionDoor); break;
@@ -1141,6 +1235,8 @@
   voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
 
   function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
+  $('idBtn').addEventListener('click', guarded(function () { return identifySubject(); }));
+  $('memSave').addEventListener('click', guarded(function () { return rememberSubject($('memName').value, $('memKind').value); }));
   $('lookBtn').addEventListener('click', guarded(function () { return describeView(''); }));
   $('doorBtn').addEventListener('click', guarded(function () { return runMission('Qapını tap', missionDoor); }));
   $('personBtn').addEventListener('click', guarded(function () { return runMission('Adamın yanına get', function () { return missionPerson(null); }); }));
@@ -1167,7 +1263,7 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v13 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v14 ✓';
 })();
 </script>
 </body>
