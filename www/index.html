@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v14</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v15</span></h1>
 
   <div class="card">
     <div class="status">
@@ -70,6 +70,7 @@
 
   <div class="card">
     <button class="voice" id="voiceBtn">🎤 Səs idarəsi: Söndürülüb</button>
+    <button class="voice" id="pttBtn" style="display:none;margin-top:6px;background:#0ea5e9">🗣 Basıb saxla və danış</button>
     <div class="row"><button id="ttsTest" style="flex:1">🔊 Səs testi</button></div>
     <div id="botLine"></div>
     <div class="row">
@@ -108,6 +109,8 @@
     <summary>⚙ Ayarlar və tanınan şəxslər</summary>
     <div class="row"><label for="turnMs">Dönmə (ms)</label><input id="turnMs" type="number" min="100" max="2000" step="50"></div>
     <div class="row"><label for="fwdMs">İrəli addım (ms)</label><input id="fwdMs" type="number" min="100" max="3000" step="50"></div>
+    <div class="row"><label for="micMode">Mikrofon rejimi</label>
+      <select id="micMode"><option value="auto">Davamlı (adla çağırış)</option><option value="ptt">Basıb saxla</option></select></div>
     <div class="row"><label for="pauseMs">Susma gözləmə (ms)</label><input id="pauseMs" type="number" min="700" max="4000" step="100"></div>
     <div class="row"><label for="circleSteps">Tam dövrə (addım)</label><input id="circleSteps" type="number" min="4" max="30" step="1"></div>
     <div class="row"><label for="camFacing">Kamera</label>
@@ -156,7 +159,7 @@
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
-  var pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
+  var micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var things = [];
@@ -166,7 +169,7 @@
 
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
-  $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
+  $('micMode').value = micMode; $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
   $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine; $('ttsVoice').value = ttsVoiceName;
 
   function updateMode() {
@@ -191,6 +194,7 @@
   $('setSave').addEventListener('click', function () {
     turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
     circleSteps = Math.max(4, +$('circleSteps').value || 12);
+    micMode = $('micMode').value; sset('mic_mode', micMode); if (voiceOn) { updateVoiceBtn('idle'); micUpdate(); }
     pauseMs = Math.min(4000, Math.max(700, +$('pauseMs').value || 1600)); sset('pause_ms', pauseMs);
     camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; gttsFails = 0; ttsVoiceName = $('ttsVoice').value; sset('tts_engine', ttsEngine); sset('tts_voice', ttsVoiceName);
     sset('turn_ms', turnMs); sset('fwd_ms', fwdMs); sset('circle_steps', circleSteps); sset('cam_facing', camFacing); sset('tts_lang', ttsLang);
@@ -283,7 +287,7 @@
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
     var c = btn.dataset.c;
-    function down(e) { e.preventDefault(); if (mission || ttsActive) abortMission(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
+    function down(e) { e.preventDefault(); if (mission || isSpeaking) abortMission(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
     function up(e) { e.preventDefault(); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') send('S'); } }
     btn.addEventListener('pointerdown', down);
     btn.addEventListener('pointerup', up);
@@ -295,7 +299,7 @@
   // =====================================================================
   //  DANIŞIQ (TTS)
   // =====================================================================
-  var ttsActive = false, ttsBusyUntil = 0, ttsUnlocked = false, ttsVoices = [], voiceWarned = false;
+  var isSpeaking = false, ttsBusyUntil = 0, ttsUnlocked = false, ttsVoices = [], voiceWarned = false;
   function loadVoices() { try { ttsVoices = speechSynthesis.getVoices() || []; } catch (e) {} }
   if ('speechSynthesis' in window) { loadVoices(); try { speechSynthesis.onvoiceschanged = loadVoices; } catch (e) {} }
   // Brauzerin avtomatik səs bloku: ilk toxunuşda səs sintezini "oyadırıq"
@@ -469,16 +473,17 @@
     var m = /rate=(\d+)/i.exec(a.mime || '');
     return pcmToWavBlob(bytes, m ? +m[1] : 24000);
   }
+  function tmSig() { var ac = new AbortController(); setTimeout(function () { ac.abort(); }, 15000); return ac.signal; }
   async function gttsCall(model, text, legacy) {
     var url, init;
     if (!legacy) {
       url = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-      init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify({
+      init = { signal: tmSig(), method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify({
         model: model, input: [{ type: 'user_input', content: [{ type: 'text', text: text }] }],
         response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice: ttsVoiceName }] } }) };
     } else {
       url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey);
-      init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      init = { signal: tmSig(), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         contents: [{ parts: [{ text: text }] }],
         generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: ttsVoiceName } } } } }) };
     }
@@ -513,9 +518,12 @@
       var url = URL.createObjectURL(blob), a = new Audio(url), settled = false;
       function end(v) { if (settled) return; settled = true; try { URL.revokeObjectURL(url); } catch (e) {} resolve(v); }
       curAudio = a;
-      a.onended = function () { end(true); };
-      a.onerror = function () { end(false); };
-      var p = a.play(); if (p && p.catch) p.catch(function () { end(false); });
+      var startTo = setTimeout(function () { try { a.pause(); } catch (e) {} end(false); }, 10000), lenTo = null;
+      a.onplaying = function () { clearTimeout(startTo); };
+      a.onloadedmetadata = function () { if (isFinite(a.duration)) lenTo = setTimeout(function () { try { a.pause(); } catch (e) {} end(true); }, (a.duration + 4) * 1000); };
+      a.onended = function () { clearTimeout(startTo); clearTimeout(lenTo); end(true); };
+      a.onerror = function () { clearTimeout(startTo); clearTimeout(lenTo); end(false); };
+      var p = a.play(); if (p && p.catch) p.catch(function () { clearTimeout(startTo); end(false); });
     });
   }
   async function playGemini(chunks, token) {
@@ -531,18 +539,33 @@
     return true;
   }
 
-  // Robot danışarkən mikrofon bağlıdır (öz səsini tutmasın)
-  function muteMic(on) {
-    try { if (stream) stream.getAudioTracks().forEach(function (t) { t.enabled = !on; }); } catch (e) {}
-    if (!on) { speaking = false; speech = []; preRoll = []; }
+  // ---------- Vəziyyət bayraqları və mikrofon qapısı ----------
+  // isSpeaking: robot danışır | isListening: mikrofon həqiqətən açıqdır | isProcessing: Gemini/tapşırıq işləyir
+  var isListening = false, isProcessing = false, acting = false, routingBusy = false, pendingWav = null, pttHeld = false, pttBuf = [];
+  var lastSpokenNorm = '', lastHeardN = '', lastHeardT = 0, chatLog = [];
+  function micOpen() { return voiceOn && !isSpeaking && Date.now() >= ttsBusyUntil && (micMode !== 'ptt' || pttHeld); }
+  function micUpdate() {
+    isProcessing = busy > 0 || acting || !!mission;
+    isListening = micOpen();
+    try { if (stream) stream.getAudioTracks().forEach(function (t) { t.enabled = isListening; }); } catch (e) {}   // robot danışarkən mikrofon TAM bağlıdır
   }
+  function muteMic(on) { if (!on) { speaking = false; speech = []; preRoll = []; } micUpdate(); }
+  function endSpeakState(delay) {
+    isSpeaking = false; ttsBusyUntil = Date.now() + delay;
+    setTimeout(function () { if (!isSpeaking) muteMic(false); }, delay + 60);   // səs bitdi: yalnız indi dinləməyə keç
+    if (convo) activeUntil = Date.now() + 15000;
+    if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
+  }
+  function logChat(who, text) { chatLog.push(who + ': ' + String(text).slice(0, 220)); if (chatLog.length > 8) chatLog.shift(); }
 
   async function speak(text) {
     text = String(text || '');
     botLine.textContent = '🤖 ' + text;
     stopSpeech();
     var token = speakToken;
-    ttsActive = true; ttsBusyUntil = Date.now() + 90000; muteMic(true);
+    lastSpokenNorm = norm(text).slice(-500); logChat('Ziko', text);
+    isSpeaking = true; ttsBusyUntil = Date.now() + 240000; muteMic(true);
+    var wd = setTimeout(function () { if (token === speakToken) { stopSpeech(); endSpeakState(500); } }, 240000);   // heç vaxt donub qalmasın
     if (voiceOn) updateVoiceBtn('say');
     try {
       var played = false, clean = normalizeSpeech(text, false), online = navigator.onLine !== false;
@@ -557,12 +580,8 @@
         for (var di = 0; di < dch.length && token === speakToken; di++) await speakDevice(dch[di], lang);
       }
     } catch (e) {}
-    if (token === speakToken) {
-      ttsActive = false; ttsBusyUntil = Date.now() + 700;
-      setTimeout(function () { if (!ttsActive) muteMic(false); }, 700);     // səs bitdi: mikrofonu yenidən aç
-      if (convo) activeUntil = Date.now() + 15000;
-      if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
-    }
+    clearTimeout(wd);
+    if (token === speakToken) endSpeakState(700);
   }
   $('ttsTest').addEventListener('click', function () { unlockTTS(); speak('Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.'); });
 
@@ -572,6 +591,15 @@
   // Köhnə model yeni açarlara bağlıdır (404). Sıra ilə işləyəni tapır və yadda saxlayır.
   var MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
 
+  // Ziko-nun xarakteri (system instruction)
+  function persona() {
+    return 'You are ' + robotName + ', a clever, warm, lively companion who lives inside a small wheeled robot body with a camera, a microphone and a speaker. ' +
+      'You are NOT a generic assistant or a machine: you have a personality, friendly, caring, curious and a little witty, like a smart friend at home. ' +
+      'Speak natural, colloquial Azerbaijani (use "sən"), vary your wording, never repeat canned or template phrases, never say you are an AI model, and never mention prompts, tasks, JSON or tools. ' +
+      'When you see something, notice the context and comment on it naturally, and offer help when it fits (for example: "Baxıram ki, masa bir az dağınıqdır, kömək edim?"). ' +
+      'When you recognise something the user taught you, say it like a person would (for example: "Aha, bu sənin bayaq göstərdiyin fincandır"). ' +
+      'Keep spoken replies short (one to three sentences) unless a story or an explanation is asked for. Text meant for speech is plain: no markdown, no emoji, no lists.';
+  }
   function gUrl(model) { return 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey); }
   function gText(j) {
     try { return j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('').trim(); } catch (e) { return ''; }
@@ -581,11 +609,13 @@
     if (!apiKey) throw new Error('Gemini açarı yoxdur');
     var list = goodModel ? [goodModel] : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false;
     for (var i = 0; i < list.length; i++) {
-      var body = { contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 600 } };
+      var body = { systemInstruction: { parts: [{ text: persona() }] }, contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 600 } };
       if (opts.json && !noJson) body.generationConfig.responseMimeType = 'application/json';
       var r;
-      try { r = await fetch(gUrl(list[i]), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
-      catch (e) { throw new Error('Şəbəkə xətası. İnternet var?'); }
+      var ac = new AbortController(), tm = setTimeout(function () { ac.abort(); }, opts.timeout || 30000);
+      try { r = await fetch(gUrl(list[i]), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ac.signal }); }
+      catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Gemini gec cavab verdi, yenidən cəhd edin' : 'Şəbəkə xətası. İnternet var?'); }
+      finally { clearTimeout(tm); }
       lastStatus = r.status;
       if (r.ok) {
         if (goodModel !== list[i]) { goodModel = list[i]; sset('gemini_model', goodModel); updateMode(); }
@@ -669,7 +699,7 @@
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
     if (mission) mission.abort = true;
-    if (ttsActive) { stopSpeech(); ttsActive = false; muteMic(false); }
+    if (isSpeaking) { stopSpeech(); endSpeakState(300); }
     if (connected) send('S');
   }
   async function runMission(title, fn) {
@@ -869,9 +899,9 @@
     try { localStorage.setItem('people', JSON.stringify(people)); localStorage.setItem('things', JSON.stringify(things)); return true; }
     catch (e) { return false; }
   }
-  function saveMemory(kind, name, desc, imgs) {
+  function saveMemory(kind, name, desc, imgs, keys) {
     var list = kind === 'person' ? people : things;
-    var rec = { name: name, desc: desc || '', imgs: imgs || [], ts: Date.now() };
+    var rec = { name: name, desc: desc || '', keys: (keys || []).slice(0, 6), imgs: imgs || [], ts: Date.now() };
     var ex = findIn(list, name);
     if (ex) list[list.indexOf(ex)] = rec; else list.push(rec);
     while (list.length > 30) list.shift();
@@ -892,11 +922,11 @@
     await sleep(300);
     var r = await visionJSON('TASK:REMEMBER\nThe user holds up or points the camera at ' + (kind === 'person' ? 'a person' : 'an object') +
       ' and calls it "' + name + '". Describe the main ' + (kind === 'person' ? 'person' : 'item') + ' in the centre of the frame in ONE short Azerbaijani sentence with the most distinctive visual features ' +
-      '(color, shape, pattern, text, clothing, hair, glasses). Reply ONLY JSON: {"ok":true|false,"desc":"..."}. ok=false if the frame is empty or shows several unrelated things.');
+      '(color, shape, pattern, text, clothing, hair, glasses). Also give 3 to 6 short English-free Azerbaijani keywords. Reply ONLY JSON: {"ok":true|false,"desc":"...","keys":["..."]}. ok=false if the frame is empty or shows several unrelated things.');
     if (!(r.ok === true || r.ok === 'true')) { await speak('Kadrda aydın bir ' + (kind === 'person' ? 'şəxs' : 'əşya') + ' görmürəm. Onu kameraya yaxın tutun.'); return; }
     var imgs = [grabFrame(320, 0.6)];
     await sleep(600); try { imgs.push(grabFrame(320, 0.6)); } catch (e) {}
-    saveMemory(kind, name, r.desc || '', imgs);
+    saveMemory(kind, name, r.desc || '', imgs, r.keys);
     await speak('Bəli, ' + name + ' olaraq yadda saxladım.');
   }
 
@@ -909,13 +939,13 @@
       .concat(things.map(function (x) { return { k: 'object', x: x }; })).slice(-14);
     pool.forEach(function (it, i) {
       if (it.x.imgs && it.x.imgs[0]) {
-        refs.push({ text: 'Reference #' + (i + 1) + ': "' + it.x.name + '" (' + it.k + '). ' + (it.x.desc || '') });
+        refs.push({ text: 'Reference #' + (i + 1) + ': "' + it.x.name + '" (' + it.k + '). ' + (it.x.desc || '') + ((it.x.keys && it.x.keys.length) ? ' Keywords: ' + it.x.keys.join(', ') : '') });
         refs.push(imgPart(it.x.imgs[0]));
       }
     });
     var instruction = 'TASK:IDENTIFY\nYou are the eye of a home robot. Look at the CURRENT frame and name the main thing/person the user is showing.\n' +
       (refs.length ? 'The user previously taught you the reference items below (name + photo). If the current frame shows the SAME specific item/person as one of them, put its exact name in "match".\n' : 'No items have been taught yet, so match=null.\n') +
-      'Reply ONLY JSON: {"match":"exact reference name or null","confidence":0.0-1.0,"kind":"object|person","description":"what it generally is, one short Azerbaijani sentence"}. ' +
+      'Reply ONLY JSON: {"match":"exact reference name or null","confidence":0.0-1.0,"kind":"object|person","description":"what it generally is, one short Azerbaijani sentence","say":"ONE natural spoken Azerbaijani sentence in your own voice: if match, recognise it like a person (e.g. Bunu mənə əvvəl göstərmişdin, sənin ürək fincanındır.); if no match, say you have not seen it before and what it looks like, WITHOUT asking for a name"}. ' +
       'Be strict: a different cup of the same type is NOT a match unless it clearly looks like the reference.';
     var parts = [{ text: instruction }].concat(refs, [{ text: 'CURRENT frame:' }, imgPart(frame)]);
     var r = parseJSON(await gemini(parts, { json: true, maxTokens: 500 })) || {};
@@ -924,11 +954,12 @@
       for (var i = 0; i < pool.length; i++) if (norm(pool[i].x.name) === norm(r.match)) { hit = pool[i]; break; }
     }
     if (hit) {
+      if (r.say) { await speak(String(r.say)); return; }
       await speak(hit.k === 'person' ? 'Bu sənin əvvəlcədən tanıtdığın şəxsdir. Adı: ' + hit.x.name + '.' : 'Bu sənin əvvəlcədən adlandırdığın əşyadır. Adı: ' + hit.x.name + '.');
       return;
     }
     var desc = r.description || 'tanımadığım bir şey';
-    var q = 'Bunu əvvəl görməmişəm. Bu, ' + String(desc).replace(/[.!?]+$/, '') + ' kimi görünür. Adını nə qoyaq?';
+    var q = (r.say ? String(r.say).replace(/\s+$/, '') + ' Adını nə qoyaq?' : 'Bunu əvvəl görməmişəm. Bu, ' + String(desc).replace(/[.!?]+$/, '') + ' kimi görünür. Adını nə qoyaq?');
     var reply = await askUser(q);
     if (!reply) return;
     var nm = parseJSON(await gemini([{ text: 'TASK:NAME\nThe robot asked the user to name the thing in front of the camera. The user replied: "' + reply + '"\n' +
@@ -965,7 +996,7 @@
     if (!apiKey) { warn('Gemini açarı yoxdur'); return; }
     if (!(await startCamera())) return;
     var t = await gemini([{ text: 'TASK:DESCRIBE\nYou are the eye of a small robot. ' + (question ? 'The user asked: "' + question + '". Answer it.' : 'Say what you see in front of you.') +
-      ' Reply in Azerbaijani, at most 2 short sentences, plain text, no markdown, no emoji.' }, { text: 'Frame:' }, imgPart(grabFrame())], { maxTokens: 300 });
+      ' Look at the whole scene, notice the context (what people are doing, what is on the table, mood, mess, anything interesting) and react like a thoughtful friend, offering help if it fits. Reply in Azerbaijani, at most 2 short sentences, plain text, no markdown, no emoji.' }, { text: 'Frame:' }, imgPart(grabFrame())], { maxTokens: 300 });
     await speak(t || 'Heç nə görə bilmədim.');
   }
 
@@ -981,7 +1012,9 @@
     else if (state === 'talk') voiceBtn.textContent = '🗣 Eşidirəm...';
     else if (state === 'send') voiceBtn.textContent = '⏳ Gemini düşünür...';
     else if (state === 'say') voiceBtn.textContent = '🔊 ' + robotName + ' danışır...';
-    else voiceBtn.textContent = '🎤 Dinləyir: "' + robotName + '" deyin (dayandırmaq üçün bas)';
+    else if (micMode === 'ptt') voiceBtn.textContent = '🎤 Mikrofon hazırdır (söndürmək üçün bas)';
+    else voiceBtn.textContent = '🎤 Dinləyir: "' + robotName + '" deyin (söndürmək üçün bas)';
+    $('pttBtn').style.display = (voiceOn && micMode === 'ptt') ? 'block' : 'none';
   }
 
   var ctx = null, stream = null, srcNode = null, proc = null;
@@ -1028,6 +1061,7 @@
   function routerPrompt(active) {
     return 'TASK:ROUTER\nYou are the voice router of a small wheeled robot named "' + robotName + '". The audio contains ONE spoken utterance (Azerbaijani, sometimes Turkish or Russian). ' +
       'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
+      (chatLog.length ? 'Recent conversation (for context, newest last):\n' + chatLog.join('\n') + '\n' : '') +
       'Session active (the user addressed the robot within the last 15 seconds): ' + (active ? 'true' : 'false') + '.\n' +
       'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
       'intent values:\n' +
@@ -1058,23 +1092,33 @@
     botLine.textContent = '🤖 Düşünürəm...';
     var t = await gemini([{ text: 'You are the voice of a friendly home robot named "' + robotName + '". Listen to the user\'s whole spoken request (Azerbaijani) and fulfil it completely. ' +
       'If it is a bedtime story / fairy tale for a child, tell a calm, warm, original story in clear simple Azerbaijani, about 250 to 400 words, with a gentle ending that helps the child fall asleep. ' +
-      'Output ONLY the text to be read aloud: plain text, short sentences, no markdown, no emoji, no title, no stage directions.' }, audioPart(b64)], { maxTokens: 4000, temp: 0.8 });
+      'Output ONLY the text to be read aloud: plain text, short sentences, no markdown, no emoji, no title, no stage directions.' }, audioPart(b64)], { maxTokens: 4000, temp: 0.8, timeout: 60000 });
     if (!t) { warn('Gemini boş cavab verdi, yenidən cəhd edin'); return; }
     await speak(t);
   }
 
-  async function routeUtterance(wav) {
+  async function routeUtterance(wav, release) {
+    release = release || function () {};
     var b64 = await blobToBase64(wav);
     var active = Date.now() < activeUntil;
     var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 900 });
     var r = parseJSON(t);
     if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
     lastVoice.textContent = String(r.heard || '—').slice(0, 40);
+    var hn = norm(r.heard);
+    if (hn.length >= 8 && lastSpokenNorm && lastSpokenNorm.indexOf(hn) >= 0) return;                 // öz səsinin əksi
+    if (hn && hn === lastHeardN && Date.now() - lastHeardT < 4000) return;                           // eyni cümlənin təkrarı
+    lastHeardN = hn; lastHeardT = Date.now();
     var intent = r.intent || 'none', needName = !(intent === 'stop' || intent === 'drive');
     if (needName && !(r.called || active)) return;
     if (mission && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S')) return;   // tapşırıq gedir
+    if ((acting && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S'))) return;           // başqa əməliyyat gedir
     if (needName) { activeUntil = Date.now() + 15000; convo = true; }
-
+    if (r.heard && intent !== 'none') logChat('İstifadəçi', r.heard);
+    release();
+    var isStopLike = intent === 'stop' || intent === 'drive';
+    if (!isStopLike) { acting = true; micUpdate(); }
+    try {
     switch (intent) {
       case 'stop': abortMission(); send('S'); note(''); break;
       case 'drive':
@@ -1092,6 +1136,7 @@
       case 'read_screen': await runMission('Ekrandakı sualı oxu', missionScreen); break;
       default: break;
     }
+    } finally { if (!isStopLike) { acting = false; micUpdate(); } }
   }
 
   function handleUtterance(chunks) {
@@ -1105,10 +1150,19 @@
       transcribe(wav).catch(function () { return ''; }).then(function (txt) { lastVoice.textContent = txt.slice(0, 40) || '—'; busy--; w.res(txt); });
       return;
     }
-    busy++; updateVoiceBtn('send');
-    routeUtterance(wav).catch(function (e) {
+    handleWav(wav);
+  }
+  function handleWav(wav) {
+    if (routingBusy) { pendingWav = wav; return; }                      // eyni anda yalnız bir qərar sorğusu
+    routingBusy = true; busy++; micUpdate(); updateVoiceBtn('send');
+    var rel = false;
+    function release() { if (rel) return; rel = true; routingBusy = false; var nx = pendingWav; pendingWav = null; if (nx) setTimeout(function () { handleWav(nx); }, 0); }
+    routeUtterance(wav, release).catch(function (e) {
       warn(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
-    }).then(function () { busy--; if (voiceOn && !ttsActive) updateVoiceBtn(busy ? 'send' : 'idle'); });
+    }).then(function () {
+      busy--; release();
+      micUpdate(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
+    });
   }
 
   function onAudio(e) {
@@ -1117,7 +1171,8 @@
   }
   function processChunk(chunk, rate) {
     if (!voiceOn) return;
-    if (ttsActive || Date.now() < ttsBusyUntil) { speaking = false; speech = []; preRoll = []; return; }   // robot öz səsini eşitməsin
+    if (micMode === 'ptt') { if (pttHeld && micOpen()) { curRate = rate; pttBuf.push(chunk); } return; }
+    if (!micOpen()) { speaking = false; speech = []; preRoll = []; return; }   // robot danışarkən heç nə qəbul edilmir
     curRate = rate;
     var sum = 0, i; for (i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
     var rms = Math.sqrt(sum / chunk.length), ms = chunk.length / rate * 1000;
@@ -1168,7 +1223,7 @@
         proc.onaudioprocess = onAudio;
         srcNode.connect(proc); proc.connect(ctx.destination);
         preRoll = []; speech = []; speaking = false; noise = 0.008;
-        voiceOn = true; updateVoiceBtn('idle'); note('');
+        voiceOn = true; updateVoiceBtn('idle'); micUpdate(); note('');
       }).catch(function (e) {
         warn('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. İcazələri yoxlayın.');
       });
@@ -1228,10 +1283,21 @@
   // ---------- Ümumi düymələr ----------
   function startVoice() { unlockTTS(); apiKey ? startGemini() : startNative(); }
   function stopVoice() {
-    voiceOn = false; updateVoiceBtn();
+    voiceOn = false; pttHeld = false; pttBuf = []; pendingWav = null; updateVoiceBtn();
     stopGemini();
     try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
   }
+  (function () {
+    var pb = $('pttBtn');
+    function down(e) { e.preventDefault(); if (!voiceOn || isSpeaking) return; pttBuf = []; pttHeld = true; micUpdate(); pb.textContent = '🔴 Danış... (burax)'; }
+    function up(e) {
+      e.preventDefault(); if (!pttHeld) return;
+      pttHeld = false; micUpdate(); pb.textContent = '🗣 Basıb saxla və danış';
+      var buf = pttBuf; pttBuf = [];
+      if (buf.length) { activeUntil = Date.now() + 15000; convo = true; handleUtterance(buf); }
+    }
+    pb.addEventListener('pointerdown', down); pb.addEventListener('pointerup', up); pb.addEventListener('pointercancel', up); pb.addEventListener('pointerleave', up);
+  })();
   voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
 
   function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
@@ -1263,7 +1329,7 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v14 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v15 ✓';
 })();
 </script>
 </body>
