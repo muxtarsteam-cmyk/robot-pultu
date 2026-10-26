@@ -63,7 +63,7 @@
     <div class="limscale"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
     <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v18</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v19</span></h1>
 
   <div class="card">
     <div class="status">
@@ -121,6 +121,10 @@
 
   <details class="card">
     <summary>⚙ Ayarlar və tanınan şəxslər</summary>
+    <div class="row"><label for="turn90Ms">90° dönmə (ms)</label><input id="turn90Ms" type="number" min="100" max="5000" step="10"></div>
+    <div class="row"><label for="cmPerSec">Sürət (sm/san)</label><input id="cmPerSec" type="number" min="3" max="200" step="1"></div>
+    <div class="row"><label for="defCm">Standart məsafə (sm)</label><input id="defCm" type="number" min="5" max="300" step="5"></div>
+    <div class="row"><button id="testTurn" style="flex:1">Sınaq: 90° sağa</button><button id="testFwd" style="flex:1">Sınaq: irəli</button></div>
     <div class="row"><label for="turnMs">Dönmə (ms)</label><input id="turnMs" type="number" min="100" max="2000" step="50"></div>
     <div class="row"><label for="fwdMs">İrəli addım (ms)</label><input id="fwdMs" type="number" min="100" max="3000" step="50"></div>
     <div class="row"><label for="rpmLimit">Limit: dəqiqədə</label><input id="rpmLimit" type="number" min="1" max="1000" step="1"></div>
@@ -179,7 +183,7 @@
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
-  var rpmLimit = +sget('rpm_limit', 10), rpdLimit = +sget('rpd_limit', 250), apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
+  var turn90Ms = +sget('turn90_ms', 700), cmPerSec = +sget('cm_per_sec', 20), defCm = +sget('def_cm', 50), rpmLimit = +sget('rpm_limit', 10), rpdLimit = +sget('rpd_limit', 250), apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var things = [];
@@ -189,7 +193,7 @@
 
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
-  $('rpmLimit').value = rpmLimit; $('rpdLimit').value = rpdLimit; $('apiGap').value = apiGap; $('localRec').value = localRec; $('micMode').value = micMode; $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
+  $('turn90Ms').value = turn90Ms; $('cmPerSec').value = cmPerSec; $('defCm').value = defCm; $('rpmLimit').value = rpmLimit; $('rpdLimit').value = rpdLimit; $('apiGap').value = apiGap; $('localRec').value = localRec; $('micMode').value = micMode; $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
   $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine; $('ttsVoice').value = ttsVoiceName;
 
   function updateMode() {
@@ -214,6 +218,8 @@
   $('setSave').addEventListener('click', function () {
     turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
     circleSteps = Math.max(4, +$('circleSteps').value || 12);
+    turn90Ms = Math.max(100, +$('turn90Ms').value || 700); cmPerSec = Math.max(3, +$('cmPerSec').value || 20); defCm = Math.max(5, +$('defCm').value || 50);
+    sset('turn90_ms', turn90Ms); sset('cm_per_sec', cmPerSec); sset('def_cm', defCm);
     rpmLimit = Math.max(1, +$('rpmLimit').value || 10); rpdLimit = Math.max(1, +$('rpdLimit').value || 250); sset('rpm_limit', rpmLimit); sset('rpd_limit', rpdLimit); limUpdate();
     apiGap = Math.min(10000, Math.max(0, +$('apiGap').value || 0)); localRec = $('localRec').value; sset('api_gap', apiGap); sset('local_rec', localRec);
     micMode = $('micMode').value; sset('mic_mode', micMode); if (voiceOn) { updateVoiceBtn('idle'); micUpdate(); }
@@ -309,8 +315,13 @@
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
     var c = btn.dataset.c;
-    function down(e) { e.preventDefault(); if (mission || isSpeaking) abortMission(); btn.classList.add('active'); send(c); if (navigator.vibrate) navigator.vibrate(15); }
-    function up(e) { e.preventDefault(); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') send('S'); } }
+    var keep = null;
+    function down(e) {
+      e.preventDefault(); if (mission || isSpeaking) abortMission(); btn.classList.add('active'); send(c);
+      if (c !== 'S') { clearInterval(keep); keep = setInterval(function () { send(c); }, 300); }          // basılı saxlananda əmri təkrarlayır (Arduino qoruması üçün)
+      if (navigator.vibrate) navigator.vibrate(15);
+    }
+    function up(e) { e.preventDefault(); clearInterval(keep); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') { send('S'); setTimeout(function () { send('S'); }, 120); } } }
     btn.addEventListener('pointerdown', down);
     btn.addEventListener('pointerup', up);
     btn.addEventListener('pointercancel', up);
@@ -813,7 +824,53 @@
   function setMissionLine(t) { missionLine.textContent = t || 'Tapşırıq yoxdur'; }
   function chk() { if (mission && mission.abort) throw { abort: true }; }
   async function wait(ms) { var end = Date.now() + ms; while (Date.now() < end) { chk(); await sleep(Math.max(1, Math.min(100, end - Date.now()))); } }
-  async function moveFor(cmd, ms) { chk(); send(cmd); await wait(connected ? ms : Math.min(ms, 200)); send('S'); await wait(connected ? 450 : 100); }
+  // Əmri vaxt bitənə qədər 300 ms-dən bir təkrarlayır, sonra DƏRHAL Dayan (S) göndərir (iki dəfə, itkiyə qarşı)
+  var KEEP_MS = 300;
+  async function holdFor(cmd, ms) {
+    var end = Date.now() + ms;
+    try {
+      chk(); send(cmd);
+      for (;;) {
+        var left = end - Date.now(); if (left <= 0) break;
+        await wait(Math.min(KEEP_MS, left));
+        if (end - Date.now() > 0) send(cmd);
+      }
+    } finally { send('S'); setTimeout(function () { send('S'); }, 120); }
+  }
+  async function moveFor(cmd, ms) { chk(); await holdFor(cmd, connected ? ms : Math.min(ms, 200)); await wait(connected ? 450 : 100); }
+
+  // ---------- Dəqiq hərəkət: bucaq və məsafə ----------
+  // "sağa dön" = 90°, "sağa 45 dərəcə dön", "geriyə dön" = 180°, "irəli 1 metr get", "irəli get" = standart məsafə, "dayanmadan irəli get" = fasiləsiz
+  function planMove(r) {
+    var d = r.drive, amt = parseFloat(r.amount), unit = String(r.unit || '').toLowerCase(), cont = (r.continuous === true || r.continuous === 'true');
+    var names = { F: 'irəli', B: 'geri', L: 'sola', R: 'sağa' }, plan = { cmd: d, ms: 0, label: '', clamped: false };
+    if (d === 'L' || d === 'R') {
+      var deg = (amt > 0 && /^deg/.test(unit)) ? amt : 90;
+      if (deg > 720) { deg = 720; plan.clamped = true; }
+      plan.ms = deg / 90 * turn90Ms; plan.label = names[d] + ' ' + Math.round(deg * 10) / 10 + '° dönmə';
+    } else {
+      if (cont) { plan.ms = 120000; plan.label = 'dayanmadan ' + names[d]; plan.cont = true; }                 // yalnız açıq əmrlə; 2 dəq təhlükəsizlik həddi
+      else {
+        var cm = defCm;
+        if (amt > 0 && unit === 'cm') cm = amt; else if (amt > 0 && (unit === 'm' || unit === 'metr')) cm = amt * 100;
+        else if (amt > 0 && /^sec|^san/.test(unit)) cm = amt * cmPerSec;
+        if (cm > 500) { cm = 500; plan.clamped = true; }
+        plan.ms = cm / cmPerSec * 1000; plan.label = names[d] + ' ' + (cm >= 100 ? Math.round(cm) / 100 + ' m' : Math.round(cm * 10) / 10 + ' sm');
+      }
+    }
+    plan.ms = Math.max(60, Math.round(plan.ms));
+    return plan;
+  }
+  async function doDrive(r) {
+    if (!/^[FBLRS]$/.test(r.drive || '')) return;
+    if (r.drive === 'S') { abortMission(); send('S'); note(''); return; }
+    if (mission) { if (mission.timed) { abortMission(); await sleep(350); } else return; }       // yeni hərəkət əvvəlkini əvəz edir
+    var plan = planMove(r);
+    if (plan.ms < 120) note('Çox qısa müddət: dəqiqlik aşağı ola bilər');
+    else if (plan.clamped) note('Məhdudiyyət tətbiq olundu');
+    else note('');
+    await runMission(plan.label, async function () { mission.timed = true; await holdFor(plan.cmd, plan.ms); });
+  }
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
     if (mission) mission.abort = true;
@@ -901,7 +958,7 @@
   function norm(s) {
     return String(s || '').toLocaleLowerCase('az')
       .replace(/ə/g,'e').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u')
-      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z\s]/g,' ').replace(/\s+/g, ' ').trim();
+      .replace(/ğ/g,'g').replace(/ş/g,'s').replace(/ç/g,'c').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g, ' ').trim();
   }
   function findPerson(name) {
     var n = norm(name);
@@ -1242,10 +1299,13 @@
       'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
       (chatLog.length ? 'Recent conversation (for context, newest last):\n' + chatLog.join('\n') + '\n' : '') +
       'Session active (the user addressed the robot within the last 15 seconds): ' + (active ? 'true' : 'false') + '.\n' +
-      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","old":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
+      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","amount":null|number,"unit":null|"deg"|"cm"|"m"|"sec","continuous":false,"name":null|"...","old":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
       'intent values:\n' +
       '- "stop": stop / dayan / dayandır / saxla.\n' +
-      '- "drive": plain movement: irəli, qabağa (F); geri, arxaya (B); sola, sola dön (L); sağa, sağa dön (R). Set "drive". This works even without the robot name.\n' +
+      '- "drive": movement. "drive": irəli/qabağa get = F; geri/arxaya get = B; sola/sola dön = L; sağa/sağa dön = R. Works even without the robot name. ' +
+      'Also fill "amount" (number) and "unit" when the user gives a size: "deg" for turns ("sağa 45 dərəcə dön" -> R, 45, deg), "cm" or "m" for distance ("irəli 10 sm get" -> F, 10, cm; "irəli 1 metr get" -> F, 1, m), "sec" for seconds. ' +
+      '"geriyə dön" / "arxaya dön" / "tərsinə dön" = turn around: drive R, amount 180, unit deg. If no size is given leave amount and unit null. ' +
+      'Set "continuous": true ONLY if the user explicitly asks for non-stop movement ("dayanmadan irəli get", "fasiləsiz"), otherwise false.\n' +
       '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + robotName + '", "' + robotName + ' bura gəl").\n' +
       '- "find_door": drive to the door: "qapıya yaxınlaş", "qapıya get".\n' +
       '- "locate_door": tell where the door is WITHOUT driving: "otaqdakı qapını tap", "qapı haradadır?", "qapını göstər".\n' +
@@ -1293,7 +1353,7 @@
     lastHeardN = hn; lastHeardT = Date.now();
     var intent = r.intent || 'none', needName = !(intent === 'stop' || intent === 'drive');
     if (needName && !(r.called || active)) return;
-    if (mission && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S')) return;   // tapşırıq gedir
+    if (mission && intent !== 'stop' && !(intent === 'drive' && (r.drive === 'S' || mission.timed))) return;   // tapşırıq gedir (hərəkət əmri istisna)
     if ((acting && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S'))) return;           // başqa əməliyyat gedir
     if (needName) { activeUntil = Date.now() + 15000; convo = true; }
     if (r.heard && intent !== 'none') logChat('İstifadəçi', r.heard);
@@ -1303,9 +1363,7 @@
     try {
     switch (intent) {
       case 'stop': abortMission(); send('S'); note(''); break;
-      case 'drive':
-        if (/^[FBLRS]$/.test(r.drive || '')) { abortMission(); send(r.drive); note(''); }
-        break;
+      case 'drive': await doDrive(r); break;
       case 'call': await speak('Bəli, necə kömək edə bilərəm?'); break;
       case 'ask': if (r.answer) await speak(String(r.answer)); break;
       case 'long': await longReply(b64, r.heard); break;
@@ -1445,7 +1503,7 @@
     for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoice(matches[i]); if (cmd) heard = matches[i]; }
     if (!heard && matches.length) heard = matches[0];
     lastVoice.textContent = heard || '—';
-    if (cmd) send(cmd);
+    if (cmd) doDrive({ drive: cmd });
   }
   function listenLoop() {
     if (!voiceOn || apiKey) return;
@@ -1490,6 +1548,8 @@
   function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
   $('idBtn').addEventListener('click', guarded(function () { return identifySubject(); }));
   $('memSave').addEventListener('click', guarded(function () { return rememberSubject($('memName').value, $('memKind').value); }));
+  $('testTurn').addEventListener('click', function () { doDrive({ drive: 'R', amount: 90, unit: 'deg' }); });
+  $('testFwd').addEventListener('click', function () { doDrive({ drive: 'F' }); });
   $('lookBtn').addEventListener('click', guarded(function () { if (!cooldownOk('look')) { note('Bir az gözləyin'); return Promise.resolve(); } return describeView(''); }));
   $('doorBtn').addEventListener('click', guarded(function () { return runMission('Qapını tap', missionDoor); }));
   $('personBtn').addEventListener('click', guarded(function () { return runMission('Adamın yanına get', function () { return missionPerson(null); }); }));
@@ -1515,13 +1575,6 @@
   window.__robotTest = {
     route: function () { return routeUtterance(new Blob([new Uint8Array(100)], { type: 'audio/wav' })); },
     handleUtterance: function () { handleUtterance([new Float32Array(16000)]); },
-    setBT: function (b) { BT = b; }, setVisionGap: function (g) { visionGap = g; },
+    setBT: function (b) { BT = b; }, setConn: function (a) { devAddr = a; setConnected(true, 'T'); }, setVisionGap: function (g) { visionGap = g; },
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
-    ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
-  };
-  limUpdate();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v18 ✓';
-})();
-</script>
-</body>
-</html>
+    ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: fu
