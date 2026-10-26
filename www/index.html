@@ -50,7 +50,7 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v15</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v16</span></h1>
 
   <div class="card">
     <div class="status">
@@ -541,7 +541,7 @@
 
   // ---------- Vəziyyət bayraqları və mikrofon qapısı ----------
   // isSpeaking: robot danışır | isListening: mikrofon həqiqətən açıqdır | isProcessing: Gemini/tapşırıq işləyir
-  var isListening = false, isProcessing = false, acting = false, routingBusy = false, pendingWav = null, pttHeld = false, pttBuf = [];
+  var lastIdentified = '', isListening = false, isProcessing = false, acting = false, routingBusy = false, pendingWav = null, pttHeld = false, pttBuf = [];
   var lastSpokenNorm = '', lastHeardN = '', lastHeardT = 0, chatLog = [];
   function micOpen() { return voiceOn && !isSpeaking && Date.now() >= ttsBusyUntil && (micMode !== 'ptt' || pttHeld); }
   function micUpdate() {
@@ -760,6 +760,25 @@
     await speak(ok ? 'Qapıya çatdım.' : 'Qapını tapa bilmədim.');
   }
 
+  // ---------- Ssenari 1b: Qapı haradadır (yalnız bildirir) ----------
+  async function missionDoorWhere() {
+    if (!(await ensureReady(false))) return;
+    await speak('Ətrafa baxıram.');
+    var steps = connected ? circleSteps : 1;
+    for (var i = 0; i < steps; i++) {
+      chk();
+      var r = await locate('a room door (door leaf or door frame)');
+      if (r.found) {
+        var near = r.distance === 'close' ? ' Çox yaxındır.' : r.distance === 'far' ? ' Bir az uzaqdadır.' : '';
+        var txt = r.position === 'left' ? 'Qapı solda görünür, sola dön.' : r.position === 'right' ? 'Qapı sağda görünür, sağa dön.' : 'Qapı düz qarşındadır.';
+        await speak(txt + near);
+        return;
+      }
+      if (connected) await moveFor('R', turnMs);
+    }
+    await speak(connected ? 'Ətrafı bir dövrə baxdım, qapını görmədim.' : 'Qapı kadrda görünmür. Kameranı başqa istiqamətə çevirib yenidən soruşun.');
+  }
+
   // ---------- Ssenari 2: Adamın yanına get ----------
   function norm(s) {
     return String(s || '').toLocaleLowerCase('az')
@@ -913,7 +932,18 @@
   }
 
   // "Bu fincandır, adı 'ürək fincan' olacaq, yadında saxla" / "Bu Əlidir, yadında saxla"
-  async function rememberSubject(name, kind) {
+  function removeMemory(name) {
+    var n = 0;
+    [people, things].forEach(function (list) { var x = findIn(list, name); if (x) { list.splice(list.indexOf(x), 1); n++; } });
+    if (n) { persist(); updatePeople(); }
+    return n;
+  }
+  async function forgetMemory(name) {
+    if (!name) { await speak('Kimi unudum? Adını deyin.'); return; }
+    if (removeMemory(name)) { if (norm(lastIdentified) === norm(name)) lastIdentified = ''; await speak(name + ' adını yaddaşımdan sildim.'); }
+    else await speak(name + ' adlı heç nə tapmadım.');
+  }
+  async function rememberSubject(name, kind, oldName) {
     name = String(name || '').trim();
     if (!name) { await speak('Adını eşitmədim. Təkrar deyin.'); return; }
     kind = kind === 'person' ? 'person' : 'object';
@@ -927,7 +957,9 @@
     var imgs = [grabFrame(320, 0.6)];
     await sleep(600); try { imgs.push(grabFrame(320, 0.6)); } catch (e) {}
     saveMemory(kind, name, r.desc || '', imgs, r.keys);
-    await speak('Bəli, ' + name + ' olaraq yadda saxladım.');
+    lastIdentified = name;
+    var removed = oldName && norm(oldName) !== norm(name) && removeMemory(oldName);
+    await speak(removed ? 'Bəli, ' + oldName + ' adını sildim, ' + name + ' olaraq yadda saxladım.' : 'Bəli, ' + name + ' olaraq yadda saxladım.');
   }
 
   // "Bu nədir?" / "Bu kimdir?" : əvvəl yaddaş, sonra Gemini Vision
@@ -946,6 +978,7 @@
     var instruction = 'TASK:IDENTIFY\nYou are the eye of a home robot. Look at the CURRENT frame and name the main thing/person the user is showing.\n' +
       (refs.length ? 'The user previously taught you the reference items below (name + photo). If the current frame shows the SAME specific item/person as one of them, put its exact name in "match".\n' : 'No items have been taught yet, so match=null.\n') +
       'Reply ONLY JSON: {"match":"exact reference name or null","confidence":0.0-1.0,"kind":"object|person","description":"what it generally is, one short Azerbaijani sentence","say":"ONE natural spoken Azerbaijani sentence in your own voice: if match, recognise it like a person (e.g. Bunu mənə əvvəl göstərmişdin, sənin ürək fincanındır.); if no match, say you have not seen it before and what it looks like, WITHOUT asking for a name"}. ' +
+      'If the subject is a person or a child, "say" must briefly give the approximate age, approximate height (for example about 120 cm), the colors of the clothes and the general look, in one or two short natural sentences. ' +
       'Be strict: a different cup of the same type is NOT a match unless it clearly looks like the reference.';
     var parts = [{ text: instruction }].concat(refs, [{ text: 'CURRENT frame:' }, imgPart(frame)]);
     var r = parseJSON(await gemini(parts, { json: true, maxTokens: 500 })) || {};
@@ -954,6 +987,7 @@
       for (var i = 0; i < pool.length; i++) if (norm(pool[i].x.name) === norm(r.match)) { hit = pool[i]; break; }
     }
     if (hit) {
+      lastIdentified = hit.x.name;
       if (r.say) { await speak(String(r.say)); return; }
       await speak(hit.k === 'person' ? 'Bu sənin əvvəlcədən tanıtdığın şəxsdir. Adı: ' + hit.x.name + '.' : 'Bu sənin əvvəlcədən adlandırdığın əşyadır. Adı: ' + hit.x.name + '.');
       return;
@@ -966,7 +1000,7 @@
       'Extract only the chosen name in its base form (for example "adı ürək fincan olsun" -> "ürək fincan"). Reply ONLY JSON: {"name":"..."} or {"name":null} if the user gave no name / said no / does not know.' }], { json: true, maxTokens: 100 })) || {};
     if (!nm.name) { await speak('Yaxşı, yadda saxlamıram.'); return; }
     var kind = r.kind === 'person' ? 'person' : 'object';
-    saveMemory(kind, String(nm.name), desc, [frame]);
+    saveMemory(kind, String(nm.name), desc, [frame]); lastIdentified = String(nm.name);
     await speak('Bəli, ' + nm.name + ' olaraq yadda saxladım.');
   }
 
@@ -1063,17 +1097,20 @@
       'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
       (chatLog.length ? 'Recent conversation (for context, newest last):\n' + chatLog.join('\n') + '\n' : '') +
       'Session active (the user addressed the robot within the last 15 seconds): ' + (active ? 'true' : 'false') + '.\n' +
-      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
+      'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","name":null|"...","old":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
       'intent values:\n' +
       '- "stop": stop / dayan / dayandır / saxla.\n' +
       '- "drive": plain movement: irəli, qabağa (F); geri, arxaya (B); sola, sola dön (L); sağa, sağa dön (R). Set "drive". This works even without the robot name.\n' +
       '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + robotName + '", "' + robotName + ' bura gəl").\n' +
-      '- "find_door": e.g. "qapıya yaxınlaş", "qapını tap".\n' +
+      '- "find_door": drive to the door: "qapıya yaxınlaş", "qapıya get".\n' +
+      '- "locate_door": tell where the door is WITHOUT driving: "otaqdakı qapını tap", "qapı haradadır?", "qapını göstər".\n' +
+      '- "forget": the user asks to forget a saved name ("Əlini unut"). Put the base-form name in "name".\n' +
+      '- "correct": the user corrects a saved name ("Yox, Əli deyil Jalədir, Əlini unut, Jaləni yadında saxla"): put the WRONG old name in "old" (or null if not said), the NEW correct name in "name", and "kind".\n' +
       '- "go_person": e.g. "gördüyün adamın yanına get", "Əlinin yanına get". If a specific person is named, put the BASE form of the name in "name" (Əlinin -> Əli), otherwise name=null.\n' +
       '- "read_screen": e.g. "kompüterə yaxınlaş, ekrandakı sualı oxu və düzgün cavabı söylə".\n' +
       '- "introduce": the user says their own name ("Mənim adım Əlidi", "Mən Leylayam"): put the base form of the name in "name".\n' +
       '- "remember": the user shows something to the camera and TEACHES its name ("Bu fincandır, adı ürək fincan olacaq, yadında saxla", "Bu Əlidir, yadında saxla"). Put the NAME the user wants to give (the custom name, base form, without quotes) in "name", and "kind":"person" if it is a person, otherwise "object".\n' +
-      '- "identify": the user shows something and asks what/who it is or what its name is ("bu nədir?", "bunun adı nədir?", "bu kimdir?", "tanıyırsan?").\n' +
+      '- "identify": the user shows something and asks what/who it is or what its name is ("bu nədir?", "bunun adı nədir?", "bu kimdir?", "bax gör qarşımda duran kimdir?", "tanıyırsan?").\n' +
       '- "look": the user asks what the robot sees in general / to look around / asks something else about the view ("nə görürsən?", "ətrafa bax"). Put the question in "question" or null.\n' +
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
       '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
@@ -1124,10 +1161,13 @@
       case 'drive':
         if (/^[FBLRS]$/.test(r.drive || '')) { abortMission(); send(r.drive); note(''); }
         break;
-      case 'call': await speak('Bəli, necə köməklik edə bilərəm?'); break;
+      case 'call': await speak('Bəli, necə kömək edə bilərəm?'); break;
       case 'ask': if (r.answer) await speak(String(r.answer)); break;
       case 'long': await longReply(b64, r.heard); break;
       case 'remember': await rememberSubject(r.name, r.kind); break;
+      case 'correct': await rememberSubject(r.name, r.kind || 'person', r.old || lastIdentified); break;
+      case 'forget': await forgetMemory(r.name || lastIdentified); break;
+      case 'locate_door': await runMission('Qapının yerini tap', missionDoorWhere); break;
       case 'identify': await identifySubject(); break;
       case 'look': await describeView(r.question || ''); break;
       case 'introduce': await runMission('Tanışlıq', function () { return introduce(r.name); }); break;
@@ -1298,7 +1338,7 @@
     }
     pb.addEventListener('pointerdown', down); pb.addEventListener('pointerup', up); pb.addEventListener('pointercancel', up); pb.addEventListener('pointerleave', up);
   })();
-  voiceBtn.addEventListener('click', function () { voiceOn ? stopVoice() : startVoice(); });
+  voiceBtn.addEventListener('click', function () { if (voiceOn) { userStoppedVoice = true; stopVoice(); } else { userStoppedVoice = false; startVoice(); } });
 
   function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
   $('idBtn').addEventListener('click', guarded(function () { return identifySubject(); }));
@@ -1310,10 +1350,13 @@
   $('abortBtn').addEventListener('click', function () { abortMission(); send('S'); });
 
   // ---------- Başlanğıc ----------
+  var userStoppedVoice = false;
+  function autoStartVoice() { if (apiKey && !voiceOn && !userStoppedVoice && sget('auto_start', '1') === '1') startVoice(); }
+  document.addEventListener('pointerdown', function () { autoStartVoice(); }, { once: true, passive: true });   // brauzerdə ilk toxunuş bəs edir
   document.addEventListener('deviceready', function () {
     BT = window.bluetoothClassicSerial || null;
     if (!BT) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; }
-    askPermissions(function () {});
+    askPermissions(function () { setTimeout(autoStartVoice, 1200); });   // APK-da özü dinləməyə başlayır
   }, false);
   document.addEventListener('pause', function () { abortMission(); if (connected) send('S'); if (voiceOn) stopVoice(); stopCamera(); }, false);
 
@@ -1329,7 +1372,7 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v15 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v16 ✓';
 })();
 </script>
 </body>
