@@ -30,6 +30,14 @@
   #bS.active { background:#ff6b6b; }
   .note { font-size:12px; color:var(--warn); text-align:center; min-height:16px; }
   .note.err { background:#7f1d1d; color:#fff; border-radius:8px; padding:6px 8px; font-size:13px; }
+  .lim { position:sticky; top:0; z-index:5; background:var(--bg); padding:4px 0 2px; }
+  .limbar { position:relative; height:10px; border-radius:6px; background:#334155; overflow:hidden; }
+  .limfill { height:100%; width:0%; background:var(--ok); transition:width .8s ease, background .4s; }
+  .limfill.warn { background:var(--warn); } .limfill.hot { background:#f97316; } .limfill.full { background:var(--stop); }
+  .limbar i { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,.55); }
+  .limscale { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-top:1px; }
+  .limtxt { font-size:11px; text-align:center; color:var(--text); margin-top:2px; }
+  .limtxt.full { color:#fca5a5; font-weight:600; }
   .sim { font-size:11px; color:var(--warn); text-align:center; }
   .row { display:flex; gap:6px; margin-top:6px; align-items:center; }
   .row input, .row select { flex:1; min-width:0; border:0; border-radius:8px; padding:8px; background:#0f172a; color:var(--text); font-size:14px; user-select:text; -webkit-user-select:text; }
@@ -50,7 +58,12 @@
 </head>
 <body>
 <div class="app">
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v17</span></h1>
+  <div class="lim">
+    <div class="limbar" id="limBar"><div class="limfill" id="limFill"></div><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div>
+    <div class="limscale"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+    <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
+  </div>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v18</span></h1>
 
   <div class="card">
     <div class="status">
@@ -110,6 +123,9 @@
     <summary>⚙ Ayarlar və tanınan şəxslər</summary>
     <div class="row"><label for="turnMs">Dönmə (ms)</label><input id="turnMs" type="number" min="100" max="2000" step="50"></div>
     <div class="row"><label for="fwdMs">İrəli addım (ms)</label><input id="fwdMs" type="number" min="100" max="3000" step="50"></div>
+    <div class="row"><label for="rpmLimit">Limit: dəqiqədə</label><input id="rpmLimit" type="number" min="1" max="1000" step="1"></div>
+    <div class="row"><label for="rpdLimit">Limit: gündə</label><input id="rpdLimit" type="number" min="1" max="100000" step="10"></div>
+    <div class="row"><button id="limReset" style="flex:1">Limit sayğacını sıfırla</button></div>
     <div class="row"><label for="apiGap">Sorğu pauzası (ms)</label><input id="apiGap" type="number" min="0" max="10000" step="250"></div>
     <div class="row"><label for="localRec">Yerli tanıma</label><select id="localRec"><option value="1">Açıq (API-siz)</option><option value="0">Söndürülü</option></select></div>
     <div class="row"><label for="micMode">Mikrofon rejimi</label>
@@ -153,6 +169,7 @@
     msg = String(msg || 'Xəta');
     noteEl.textContent = '⚠ ' + msg; noteEl.className = 'note err';
     try { console.log('[Robot xəta] ' + msg); } catch (e) {}
+    if (/limit/i.test(msg)) noSpeak = true;                 // limit xəbərdarlığını ayrıca elan edirik
     if (!noSpeak && Date.now() - lastWarnSpoken > 6000) { lastWarnSpoken = Date.now(); speak(msg.split('. ')[0].slice(0, 120)); }
   }
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -162,7 +179,7 @@
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = +sget('turn_ms', 400), fwdMs = +sget('fwd_ms', 700), circleSteps = +sget('circle_steps', 12);
-  var apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
+  var rpmLimit = +sget('rpm_limit', 10), rpdLimit = +sget('rpd_limit', 250), apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var things = [];
@@ -172,7 +189,7 @@
 
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
-  $('apiGap').value = apiGap; $('localRec').value = localRec; $('micMode').value = micMode; $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
+  $('rpmLimit').value = rpmLimit; $('rpdLimit').value = rpdLimit; $('apiGap').value = apiGap; $('localRec').value = localRec; $('micMode').value = micMode; $('pauseMs').value = pauseMs; $('turnMs').value = turnMs; $('fwdMs').value = fwdMs; $('circleSteps').value = circleSteps;
   $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine; $('ttsVoice').value = ttsVoiceName;
 
   function updateMode() {
@@ -197,10 +214,11 @@
   $('setSave').addEventListener('click', function () {
     turnMs = Math.max(100, +$('turnMs').value || 400); fwdMs = Math.max(100, +$('fwdMs').value || 700);
     circleSteps = Math.max(4, +$('circleSteps').value || 12);
+    rpmLimit = Math.max(1, +$('rpmLimit').value || 10); rpdLimit = Math.max(1, +$('rpdLimit').value || 250); sset('rpm_limit', rpmLimit); sset('rpd_limit', rpdLimit); limUpdate();
     apiGap = Math.min(10000, Math.max(0, +$('apiGap').value || 0)); localRec = $('localRec').value; sset('api_gap', apiGap); sset('local_rec', localRec);
     micMode = $('micMode').value; sset('mic_mode', micMode); if (voiceOn) { updateVoiceBtn('idle'); micUpdate(); }
     pauseMs = Math.min(4000, Math.max(700, +$('pauseMs').value || 1600)); sset('pause_ms', pauseMs);
-    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; gttsFails = 0; gttsPause = 0; quotaUntil = 0; ttsVoiceName = $('ttsVoice').value; sset('tts_engine', ttsEngine); sset('tts_voice', ttsVoiceName);
+    camFacing = $('camFacing').value; ttsLang = $('ttsLang').value; ttsEngine = $('ttsEngine').value; onlineFails = 0; gttsFails = 0; gttsPause = 0; ttsVoiceName = $('ttsVoice').value; sset('tts_engine', ttsEngine); sset('tts_voice', ttsVoiceName);
     sset('turn_ms', turnMs); sset('fwd_ms', fwdMs); sset('circle_steps', circleSteps); sset('cam_facing', camFacing); sset('tts_lang', ttsLang);
     note('Ayarlar saxlanıldı');
     if (camStream) { stopCamera(); }
@@ -548,7 +566,7 @@
   // isSpeaking: robot danışır | isListening: mikrofon həqiqətən açıqdır | isProcessing: Gemini/tapşırıq işləyir
   var lastIdentified = '', isListening = false, isProcessing = false, acting = false, routingBusy = false, pendingWav = null, pttHeld = false, pttBuf = [];
   var lastSpokenNorm = '', lastHeardN = '', lastHeardT = 0, chatLog = [];
-  function micOpen() { return voiceOn && !isSpeaking && Date.now() >= ttsBusyUntil && (micMode !== 'ptt' || pttHeld); }
+  function micOpen() { return voiceOn && !isRateLimited && !isSpeaking && Date.now() >= ttsBusyUntil && (micMode !== 'ptt' || pttHeld); }
   function micUpdate() {
     isProcessing = busy > 0 || acting || !!mission;
     isListening = micOpen();
@@ -610,7 +628,55 @@
     try { return j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('').trim(); } catch (e) { return ''; }
   }
   // ---------- API qənaəti: pauza, limit gözləməsi, statistika ----------
-  var apiStats = { calls: 0, img: 0, saved: 0, skipped: 0 }, quotaUntil = 0, lastApiAt = 0, apiChain = Promise.resolve(), gttsPause = 0;
+  var apiStats = { calls: 0, img: 0, saved: 0, skipped: 0 }, quotaUntil = +sget('quota_until', 0) || 0, isRateLimited = Date.now() < quotaUntil, limitSpoken = false, minuteHits = [], lastApiAt = 0, apiChain = Promise.resolve(), gttsPause = 0;
+  // ---------- Limit izləmə (Gemini istifadə qalığını bildirmir: sorğuları özümüz sayırıq) ----------
+  function pacificDay() { try { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }); } catch (e) { return new Date().toISOString().slice(0, 10); } }
+  function secsToPacificMidnight() {
+    try {
+      var t = new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Los_Angeles', hour12: false }).split(':');
+      return Math.max(60, 86400 - (+t[0] * 3600 + +t[1] * 60 + +t[2]));
+    } catch (e) { return 3600; }
+  }
+  var dayRec = { day: pacificDay(), n: 0 };
+  try { var dr = JSON.parse(sget('api_day', 'null')); if (dr && dr.day === dayRec.day) dayRec = dr; } catch (e) {}
+  function recordCall() {
+    var now = Date.now(); minuteHits.push(now);
+    if (dayRec.day !== pacificDay()) dayRec = { day: pacificDay(), n: 0 };
+    dayRec.n++; sset('api_day', JSON.stringify(dayRec));
+    limUpdate();
+  }
+  function fmtWait(sec) {
+    sec = Math.max(0, Math.ceil(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), x = sec % 60;
+    return h ? h + ' saat ' + m + ' dəq' : m ? m + ' dəq ' + x + ' san' : x + ' san';
+  }
+  function limUpdate() {
+    var now = Date.now(); minuteHits = minuteHits.filter(function (t) { return now - t < 60000; });
+    if (dayRec.day !== pacificDay()) { dayRec = { day: pacificDay(), n: 0 }; sset('api_day', JSON.stringify(dayRec)); }
+    var was = isRateLimited; isRateLimited = now < quotaUntil;
+    var pm = minuteHits.length / rpmLimit * 100, pd = dayRec.n / rpdLimit * 100, pct = Math.min(100, Math.round(Math.max(pm, pd)));
+    if (isRateLimited) pct = 100;
+    var fill = $('limFill'), txt = $('limTxt');
+    fill.style.width = pct + '%';
+    fill.className = 'limfill' + (isRateLimited ? ' full' : pct >= 85 ? ' hot' : pct >= 60 ? ' warn' : '');
+    if (isRateLimited) { txt.className = 'limtxt full'; txt.textContent = 'Limit dolub. Təxmini bərpa müddəti: ' + fmtWait((quotaUntil - now) / 1000); }
+    else { txt.className = 'limtxt'; txt.textContent = 'Gemini limiti: ' + pct + '% · dəqiqədə ' + minuteHits.length + '/' + rpmLimit + ' · gündə ' + dayRec.n + '/' + rpdLimit + ' (təxmini)'; }
+    if (was && !isRateLimited) {                       // vaxt bitdi: sistem yenidən aktivdir
+      sset('quota_until', 0); limitSpoken = false; minuteHits = []; micUpdate(); if (voiceOn) updateVoiceBtn('idle');
+      note('Limit bərpa olundu'); speak('Limit bərpa olundu, yenidən dinləyirəm.');
+    }
+    if (was !== isRateLimited) { micUpdate(); if (voiceOn) updateVoiceBtn('idle'); }
+  }
+  function setRateLimit(ms) {
+    quotaUntil = Date.now() + ms; sset('quota_until', quotaUntil);
+    isRateLimited = true; gttsPause = Math.max(gttsPause, quotaUntil < Date.now() + 120000 ? quotaUntil : Date.now() + 120000);
+    try { abortMission(); } catch (e) {}
+    limUpdate(); micUpdate(); if (voiceOn) updateVoiceBtn('idle');
+    if (!limitSpoken) { limitSpoken = true; speak('Gemini API limiti doldu, zəhmət olmasa gözləyin.'); }
+  }
+  setInterval(limUpdate, 1000);
+  $('limReset').addEventListener('click', function () { quotaUntil = 0; minuteHits = []; dayRec = { day: pacificDay(), n: 0 }; sset('api_day', JSON.stringify(dayRec)); sset('quota_until', 0); limitSpoken = false; limUpdate(); micUpdate(); note('Limit sayğacı sıfırlandı'); });
+
   function updateApiInfo() { $('apiInfo').textContent = 'Sorğu: ' + apiStats.calls + ' (şəkilli: ' + apiStats.img + ') · Yerli cavab: ' + apiStats.saved + ' · Atılan: ' + apiStats.skipped; }
   function apiThrottle() {                                   // ardıcıl sorğular arasında minimum pauza
     var p = apiChain.then(function () { var w = apiGap - (Date.now() - lastApiAt); return w > 0 ? sleep(w) : 0; }).then(function () { lastApiAt = Date.now(); });
@@ -620,7 +686,7 @@
   async function gemini(parts, opts) {
     opts = opts || {};
     if (!apiKey) throw new Error('Gemini açarı yoxdur');
-    if (Date.now() < quotaUntil) { apiStats.skipped++; updateApiInfo(); throw new Error('Gemini limiti dolub. ' + Math.ceil((quotaUntil - Date.now()) / 1000) + ' saniyə gözləyin'); }
+    if (isRateLimited || Date.now() < quotaUntil) { apiStats.skipped++; updateApiInfo(); throw new Error('Gemini limiti dolub. Bərpa: ' + fmtWait((quotaUntil - Date.now()) / 1000)); }
     await apiThrottle();
     apiStats.calls++; if (hasImage(parts)) apiStats.img++; updateApiInfo();
     var list = goodModel ? [goodModel] : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false;
@@ -629,6 +695,7 @@
       if (!opts.nosys) body.systemInstruction = { parts: [{ text: persona() }] };       // sadə JSON tapşırıqlarında xarakter mətni göndərilmir
       if (opts.json && !noJson) body.generationConfig.responseMimeType = 'application/json';
       var r;
+      recordCall();
       var ac = new AbortController(), tm = setTimeout(function () { ac.abort(); }, opts.timeout || 30000);
       try { r = await fetch(gUrl(list[i]), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ac.signal }); }
       catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Gemini gec cavab verdi, yenidən cəhd edin' : 'Şəbəkə xətası. İnternet var?'); }
@@ -640,8 +707,13 @@
       }
       if (r.status === 404 || r.status === 503) continue;                       // model yoxdur / məşğuldur
       if (r.status === 429) {
-        if (retry429 < 1) { retry429++; note('Gemini limiti: 3 saniyə gözləyirəm...'); await sleep(3000); i--; continue; }
-        quotaUntil = Date.now() + 45000; throw new Error('Gemini limiti doldu. 45 saniyə gözləyin');
+        var bt = ''; try { bt = await r.text(); } catch (e) {}
+        var rd = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(bt), waitS = rd ? Math.ceil(+rd[1]) : 0;
+        if (/PerDay|per day|daily/i.test(bt)) waitS = Math.max(waitS, secsToPacificMidnight());      // gündəlik limit: gecə yarısına qədər (Pasifik vaxtı)
+        if (!waitS) waitS = 60;
+        if (retry429 < 1 && waitS <= 5) { retry429++; await sleep(waitS * 1000); i--; continue; }
+        setRateLimit(waitS * 1000 + 1000);
+        throw new Error('Gemini limiti doldu. Təxmini bərpa: ' + fmtWait(waitS));
       }
       if (r.status === 400 && opts.json && !noJson) { noJson = true; i--; continue; }  // JSON rejimi dəstəklənmirsə
       throw new Error(r.status === 400 || r.status === 403 ? 'API açarı səhvdir və ya icazəsi yoxdur (' + r.status + ')'
@@ -1115,6 +1187,7 @@
     voiceBtn.classList.toggle('talk', voiceOn && state === 'talk');
     voiceBtn.classList.toggle('say', voiceOn && state === 'say');
     if (!voiceOn) voiceBtn.textContent = '🎤 Səs idarəsi: Söndürülüb';
+    else if (isRateLimited) voiceBtn.textContent = '⛔ Limit dolub: mikrofon bağlıdır (söndürmək üçün bas)';
     else if (state === 'talk') voiceBtn.textContent = '🗣 Eşidirəm...';
     else if (state === 'send') voiceBtn.textContent = '⏳ Gemini düşünür...';
     else if (state === 'say') voiceBtn.textContent = '🔊 ' + robotName + ' danışır...';
@@ -1266,6 +1339,7 @@
     handleWav(wav);
   }
   function handleWav(wav) {
+    if (isRateLimited) { apiStats.skipped++; updateApiInfo(); return; }                  // limit dolub: Gemini-yə heç nə göndərmə
     if (routingBusy) { pendingWav = wav; return; }                      // eyni anda yalnız bir qərar sorğusu
     routingBusy = true; busy++; micUpdate(); updateVoiceBtn('send');
     var rel = false;
@@ -1283,7 +1357,7 @@
     processChunk(new Float32Array(e.inputBuffer.getChannelData(0)), ctx.sampleRate);
   }
   function processChunk(chunk, rate) {
-    if (!voiceOn) return;
+    if (!voiceOn || isRateLimited) return;
     if (micMode === 'ptt') { if (pttHeld && micOpen()) { curRate = rate; pttBuf.push(chunk); } return; }
     if (!micOpen()) { speaking = false; speech = []; preRoll = []; return; }   // robot danışarkən heç nə qəbul edilmir
     curRate = rate;
@@ -1445,7 +1519,8 @@
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v17 ✓';
+  limUpdate();
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v18 ✓';
 })();
 </script>
 </body>
