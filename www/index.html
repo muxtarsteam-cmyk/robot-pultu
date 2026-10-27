@@ -81,7 +81,7 @@
     <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
     <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v22</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v23</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -121,10 +121,10 @@
       <div>İstiqamət<b id="gyH">—</b></div><div>Sıfırdan fərq<b id="gyD">—</b></div><div>Ox / tezlik<b id="gyX">—</b></div>
     </div>
     <div class="sl"><label>Dönmə sürəti (giroskop): <b id="gyLvlVal">1</b>/9</label><input type="range" id="gyLvl" min="1" max="9" step="1"></div>
-    <div class="hint">1 = ən zəif (sürünərək dönür). Robot tıxanıb dönmürsə, özü bir pillə artırır və yadda saxlayır.</div>
+    <div class="hint">1 = ən zəif (PWM 35), 9 = PWM 50. Dönmə sürünərək gedir. Robot tıxanıb dönmürsə, özü bir pillə artırır və yadda saxlayır.</div>
     <div class="row"><button id="gyZero" style="flex:0 0 96px">⟲ Sıfırla</button>
       <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
-    <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə ultra-zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
+    <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə ekstremal zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
   <div class="card" id="ctlPanel">
@@ -139,7 +139,7 @@
     <div class="sl"><label>90° kalibrləmə: <b id="turn90Val">700 ms</b></label><input type="range" id="turn90Ms" min="200" max="2500" step="10"></div>
     <div class="sl"><label>Hərəkət sürəti: <b id="cmVal">20 sm/san</b></label><input type="range" id="cmPerSec" min="5" max="80" step="1"></div>
     <div class="row"><label for="plainFwd" style="flex:0 0 120px">Məsafəsiz "irəli get"</label><select id="plainFwd"><option value="inf">Sonsuz (Dayan deyənə qədər)</option><option value="dist">Standart məsafə</option></select></div>
-    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v5.ino lazımdır.</div>
+    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v6.ino lazımdır.</div>
   </div>
 
   <div class="card">
@@ -933,12 +933,12 @@
   // ---------- Giroskop: telefonun DeviceOrientation məlumatı + dəqiq bucaqla dönmə ----------
   var gy = { on: false, alpha: null, beta: null, gamma: null, abs: false, heading: null, curAxis: 'y', lastAt: 0, n: 0, zero: null, rendered: 0, t0: 0, lastRes: '' };
   var gt = null;                                           // aktiv dönmə: {dir, sign, target, cum, ...}
-  var gyroLead = +sget('gyro_lead2', 0.5);                 // əyləc zamanı əlavə dönməni əvvəlcədən çıxmaq üçün (dərəcə), özü öyrənir (ultra-yavaş sürətdə çox kiçikdir)
-  var turnLevel = Math.max(1, Math.min(9, +sget('turn_level', 1)));   // dönmə sürət səviyyəsi: 1 = ən zəif (Arduino 'T1'), 9 = ən güclü; robot tıxanarsa özü artırır
+  var gyroLead = +sget('gyro_lead3', 0);                 // əyləc zamanı əlavə dönməni əvvəlcədən çıxmaq üçün (dərəcə), özü öyrənir (ultra-yavaş sürətdə çox kiçikdir)
+  var turnLevel = Math.max(1, Math.min(9, +sget('turn_level2', 1)));   // dönmə sürət səviyyəsi: 1 = ən zəif (Arduino 'T1' = PWM 35), 9 = PWM 50; robot tıxanarsa özü artırır
   var gyroMode = sget('gyro_mode', 'auto');
   $('gyMode').value = gyroMode;
   $('gyLvl').value = turnLevel; $('gyLvlVal').textContent = turnLevel;
-  $('gyLvl').addEventListener('input', function () { turnLevel = +this.value; sset('turn_level', turnLevel); $('gyLvlVal').textContent = turnLevel; });
+  $('gyLvl').addEventListener('input', function () { turnLevel = +this.value; sset('turn_level2', turnLevel); $('gyLvlVal').textContent = turnLevel; });
   function wrap180(a) { a = a % 360; if (a > 180) a -= 360; if (a <= -180) a += 360; return a; }
   // W3C DeviceOrientation fırlanma matrisi: alpha(Z) beta(X) gamma(Y). Telefonun ox vektorunun üfüqi proyeksiyasından istiqamət (saat əqrəbi, 0..360)
   function axisHeading(a, b, g, axis) {
@@ -973,7 +973,7 @@
     if (gt) {                                              // aktiv dönmə: bucağı topla (0°-dən keçidlər düzgün hesablanır)
       var hh = (gt.axis === 'y' ? hy : hz).h, d = wrap180(hh - gt.last); gt.last = hh; gt.cum += d * gt.sign;
       if (!gt.done) {
-        if (Math.abs(gt.cum - gt.mark) >= 1) { gt.mark = gt.cum; gt.progAt = Date.now(); }
+        if (Math.abs(gt.cum - gt.mark) >= 0.4) { gt.mark = gt.cum; gt.progAt = Date.now(); }
         var left = gt.target - gt.cum;
         if (left <= gt.lead) {                             // HƏDƏF BUCAĞA ÇATDI: dərhal Dayan (S)
           gt.done = true; send('S'); setTimeout(function () { send('S'); }, 60);
@@ -1000,13 +1000,13 @@
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
 
-  // Bağlı dövrə (closed-loop) dönmə: ULTRA-ZƏİF sürətlə (Arduino 'Q'/'E' əmri) hədəf bucağa qədər dön, çatan kimi Dayan (S)
+  // Bağlı dövrə (closed-loop) dönmə: EKSTREMAL ZƏİF sürətlə (PWM 35-50) (Arduino 'Q'/'E' əmri) hədəf bucağa qədər dön, çatan kimi Dayan (S)
   async function gyroTurn(dir, deg) {
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
-    var timedMs = deg / 90 * effTurn90(), maxMs = Math.max(9000, timedMs * 8 + 4000);          // çox yavaş döndüyü üçün vaxt həddi böyükdür
+    var maxMs = Math.max(20000, deg * 500 + 15000);                                              // ekstremal yavaş dönmə: hər dərəcə saniyələr çəkə bilər
     var cmd = dir === 'R' ? 'E' : 'Q';
     var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis,
-      startAlpha: gy.alpha, lead: gyroLead * (deg < 20 ? 0.5 : 1), done: false, bumped: 0, progAt: Date.now() + 300 };
+      startAlpha: gy.alpha, lead: gyroLead * (deg < 20 ? 0.5 : 1), done: false, bumped: 0, kicks: 0, progAt: Date.now() + 600 };
     var t0 = Date.now(), lastSend = 0, stalled = false;
     try {
       try {
@@ -1017,9 +1017,10 @@
           var now = Date.now();
           if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°)'); }
           if (now - gy.lastAt > 800) { stalled = true; throw new Error('Giroskop məlumatı kəsildi, robot dayandı'); }
-          if (now - cur.progAt > 700) {                                                          // tıxanma: robot yerindən tərpənmir
-            if (turnLevel < 9) { turnLevel++; cur.bumped++; sset('turn_level', turnLevel); $('gyLvl').value = turnLevel; $('gyLvlVal').textContent = turnLevel; send('T' + turnLevel); cur.progAt = now; }
-            else if (now - cur.progAt > 1500) { stalled = true; throw new Error('Robot dönmür. Motorları və batareyanı yoxlayın'); }
+          if (now - cur.progAt > 1500) {                                                         // tıxanma: robot yerindən tərpənmir
+            if (turnLevel < 9) { turnLevel++; cur.bumped++; sset('turn_level2', turnLevel); $('gyLvl').value = turnLevel; $('gyLvlVal').textContent = turnLevel; send('T' + turnLevel); cur.progAt = now; }
+            else if (cur.kicks < 3) { cur.kicks++; send('K'); cur.progAt = now; }               // ən yüksək səviyyədə: qısa başlanğıc impulsunu təkrarla
+            else { stalled = true; throw new Error('Robot dönmür. Motorları və batareyanı yoxlayın'); }
           }
           if (now - lastSend >= 120) { send(cmd); lastSend = now; }                              // Arduino qoruması üçün əmri təkrarla
           await sleep(20);
@@ -1030,7 +1031,7 @@
       await wait(450);                                                                           // robot tam dayansın, qalıq bucağı ölç
       var err = cur.cum - deg;
       gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '° (səviyyə ' + turnLevel + ')';
-      if (deg >= 20 && !stalled && Math.abs(err) < 15) { gyroLead = Math.max(0, Math.min(10, gyroLead + err * 0.5)); sset('gyro_lead2', gyroLead); }
+      if (deg >= 20 && !stalled && Math.abs(err) < 15) { gyroLead = Math.max(0, Math.min(5, gyroLead + err * 0.5)); sset('gyro_lead3', gyroLead); }
       note('Dönmə: hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '°');
     } finally { gt = null; renderGyro(true); }
   }
@@ -1863,7 +1864,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v22 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v23 ✓';
 })();
 </script>
 </body>
