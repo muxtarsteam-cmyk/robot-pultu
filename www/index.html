@@ -81,7 +81,7 @@
     <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
     <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v23</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v24</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -109,6 +109,14 @@
     <button id="bB" data-c="B">▼<br>Geri</button>
   </div>
 
+  <div class="card" id="turnSpeedPanel" style="border:1px solid var(--accent)">
+    <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:14px">🐢 Dönmə Sürəti (Turning Speed)</b><b id="turnPctVal" style="font-size:22px;color:var(--accent);font-variant-numeric:tabular-nums">25%</b></div>
+    <input type="range" id="turnPct" min="0" max="100" step="1" value="25" style="width:100%;margin-top:8px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span>0% (ən zəif)</span><span>50%</span><span>100%</span></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="turnAuto"> Robot tıxananda sürəti avtomatik artır (+5%)</label>
+    <div class="hint">Bu sürət yalnız giroskoplu dönmədə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
+  </div>
+
   <div class="card" id="gyroPanel">
     <b style="font-size:13px">🧭 Giroskop monitoru</b>
     <div class="row"><button id="gyBtn" class="primary" style="flex:1">🧭 Giroskopu aktivləşdir (icazə ver)</button></div>
@@ -120,11 +128,9 @@
       <div>α (alpha)<b id="gyA">—</b></div><div>β (beta)<b id="gyB">—</b></div><div>γ (gamma)<b id="gyG">—</b></div>
       <div>İstiqamət<b id="gyH">—</b></div><div>Sıfırdan fərq<b id="gyD">—</b></div><div>Ox / tezlik<b id="gyX">—</b></div>
     </div>
-    <div class="sl"><label>Dönmə sürəti (giroskop): <b id="gyLvlVal">1</b>/9</label><input type="range" id="gyLvl" min="1" max="9" step="1"></div>
-    <div class="hint">1 = ən zəif (PWM 35), 9 = PWM 50. Dönmə sürünərək gedir. Robot tıxanıb dönmürsə, özü bir pillə artırır və yadda saxlayır.</div>
     <div class="row"><button id="gyZero" style="flex:0 0 96px">⟲ Sıfırla</button>
       <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
-    <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə ekstremal zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
+    <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
   <div class="card" id="ctlPanel">
@@ -139,7 +145,7 @@
     <div class="sl"><label>90° kalibrləmə: <b id="turn90Val">700 ms</b></label><input type="range" id="turn90Ms" min="200" max="2500" step="10"></div>
     <div class="sl"><label>Hərəkət sürəti: <b id="cmVal">20 sm/san</b></label><input type="range" id="cmPerSec" min="5" max="80" step="1"></div>
     <div class="row"><label for="plainFwd" style="flex:0 0 120px">Məsafəsiz "irəli get"</label><select id="plainFwd"><option value="inf">Sonsuz (Dayan deyənə qədər)</option><option value="dist">Standart məsafə</option></select></div>
-    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v6.ino lazımdır.</div>
+    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v7.ino lazımdır.</div>
   </div>
 
   <div class="card">
@@ -934,11 +940,18 @@
   var gy = { on: false, alpha: null, beta: null, gamma: null, abs: false, heading: null, curAxis: 'y', lastAt: 0, n: 0, zero: null, rendered: 0, t0: 0, lastRes: '' };
   var gt = null;                                           // aktiv dönmə: {dir, sign, target, cum, ...}
   var gyroLead = +sget('gyro_lead3', 0);                 // əyləc zamanı əlavə dönməni əvvəlcədən çıxmaq üçün (dərəcə), özü öyrənir (ultra-yavaş sürətdə çox kiçikdir)
-  var turnLevel = Math.max(1, Math.min(9, +sget('turn_level2', 1)));   // dönmə sürət səviyyəsi: 1 = ən zəif (Arduino 'T1' = PWM 35), 9 = PWM 50; robot tıxanarsa özü artırır
+  var turnPct = Math.max(0, Math.min(100, +sget('turn_pct', 25)));    // dönmə sürəti 0-100% (Arduino: 'P' + 3 rəqəm, məs. P025)
+  var turnAuto = sget('turn_auto', '0') === '1';                        // tıxananda avtomatik artırma (standart: söndürülüb)
+  function pctCmd() { return 'P' + ('00' + Math.round(turnPct)).slice(-3); }
   var gyroMode = sget('gyro_mode', 'auto');
   $('gyMode').value = gyroMode;
-  $('gyLvl').value = turnLevel; $('gyLvlVal').textContent = turnLevel;
-  $('gyLvl').addEventListener('input', function () { turnLevel = +this.value; sset('turn_level2', turnLevel); $('gyLvlVal').textContent = turnLevel; });
+  function showPct() { $('turnPct').value = turnPct; $('turnPctVal').textContent = Math.round(turnPct) + '%'; }
+  showPct(); $('turnAuto').checked = turnAuto;
+  $('turnPct').addEventListener('input', function () {
+    turnPct = +this.value; sset('turn_pct', turnPct); showPct();
+    if (gt && !gt.done) send(pctCmd());                                 // dönmə gedərkən də dərhal tətbiq et
+  });
+  $('turnAuto').addEventListener('change', function () { turnAuto = this.checked; sset('turn_auto', turnAuto ? '1' : '0'); });
   function wrap180(a) { a = a % 360; if (a > 180) a -= 360; if (a <= -180) a += 360; return a; }
   // W3C DeviceOrientation fırlanma matrisi: alpha(Z) beta(X) gamma(Y). Telefonun ox vektorunun üfüqi proyeksiyasından istiqamət (saat əqrəbi, 0..360)
   function axisHeading(a, b, g, axis) {
@@ -1000,7 +1013,7 @@
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
 
-  // Bağlı dövrə (closed-loop) dönmə: EKSTREMAL ZƏİF sürətlə (PWM 35-50) (Arduino 'Q'/'E' əmri) hədəf bucağa qədər dön, çatan kimi Dayan (S)
+  // Bağlı dövrə (closed-loop) dönmə: slayderdəki zəif sürətlə (faiz → PWM) (Arduino 'Q'/'E' əmri) hədəf bucağa qədər dön, çatan kimi Dayan (S)
   async function gyroTurn(dir, deg) {
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var maxMs = Math.max(20000, deg * 500 + 15000);                                              // ekstremal yavaş dönmə: hər dərəcə saniyələr çəkə bilər
@@ -1010,7 +1023,7 @@
     var t0 = Date.now(), lastSend = 0, stalled = false;
     try {
       try {
-        send('T' + turnLevel);                                                                   // dönmə üçün xüsusi aşağı sürət limiti
+        send(pctCmd());                                                                          // slayderdən dönmə sürəti (faiz) Arduino-ya göndərilir
         send(cmd); lastSend = Date.now();
         while (!cur.done) {
           chk();
@@ -1018,9 +1031,9 @@
           if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°)'); }
           if (now - gy.lastAt > 800) { stalled = true; throw new Error('Giroskop məlumatı kəsildi, robot dayandı'); }
           if (now - cur.progAt > 1500) {                                                         // tıxanma: robot yerindən tərpənmir
-            if (turnLevel < 9) { turnLevel++; cur.bumped++; sset('turn_level2', turnLevel); $('gyLvl').value = turnLevel; $('gyLvlVal').textContent = turnLevel; send('T' + turnLevel); cur.progAt = now; }
-            else if (cur.kicks < 3) { cur.kicks++; send('K'); cur.progAt = now; }               // ən yüksək səviyyədə: qısa başlanğıc impulsunu təkrarla
-            else { stalled = true; throw new Error('Robot dönmür. Motorları və batareyanı yoxlayın'); }
+            if (turnAuto && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); cur.bumped++; sset('turn_pct', turnPct); showPct(); send(pctCmd()); cur.progAt = now; }
+            else if (cur.kicks < 3) { cur.kicks++; send('K'); cur.progAt = now; }               // qısa başlanğıc impulsunu təkrarla
+            else { stalled = true; throw new Error('Robot dönmür (' + Math.round(turnPct) + '%). Dönmə sürəti şkalasını artırın'); }
           }
           if (now - lastSend >= 120) { send(cmd); lastSend = now; }                              // Arduino qoruması üçün əmri təkrarla
           await sleep(20);
@@ -1030,7 +1043,7 @@
       }
       await wait(450);                                                                           // robot tam dayansın, qalıq bucağı ölç
       var err = cur.cum - deg;
-      gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '° (səviyyə ' + turnLevel + ')';
+      gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '° (sürət ' + Math.round(turnPct) + '%)';
       if (deg >= 20 && !stalled && Math.abs(err) < 15) { gyroLead = Math.max(0, Math.min(5, gyroLead + err * 0.5)); sset('gyro_lead3', gyroLead); }
       note('Dönmə: hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '°');
     } finally { gt = null; renderGyro(true); }
@@ -1864,7 +1877,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v23 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v24 ✓';
 })();
 </script>
 </body>
