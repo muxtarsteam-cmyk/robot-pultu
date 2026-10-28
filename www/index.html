@@ -1957,25 +1957,44 @@
   //  Mürəkkəb / qeyri-standart cümlələr əvvəlki kimi Gemini-yə gedir.
   // =====================================================================
   var localOn = false, localRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
-  var LOCAL_WAIT_MS = 1300;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
+  var LOCAL_WAIT_MS = 1800, LOCAL_WAIT_ALIVE_MS = 2600;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
   var localSetting = sget('local_cmd', '1') === '1';
   $('localCmd').checked = localSetting;
-  // Yalnız bu sözlərdən ibarət qısa cümlələr "sadə əmr" sayılır (başqa söz varsa -> Gemini)
-  var LOCAL_OK = {};
-  ('ireli qabaga qabag geri geriye arxaya arxa saga sag sola sol don donun dondur get git gedin gel dayan dayandir stop sakit derece metr m sm santimetr saniye san zehmet olmasa indi robot').split(' ').forEach(function (w) { LOCAL_OK[w] = 1; });
-  function localSimpleCommand(text) {
-    var n = norm(text); if (!n) return null;
-    var words = n.split(' ').filter(Boolean); if (!words.length || words.length > 7) return null;
-    var nameW = norm(robotName).split(' ');
-    for (var i = 0; i < words.length; i++) {
-      var w = words[i];
-      if (!(LOCAL_OK[w] || NUMW[w] !== undefined || /^\d+([.,]\d+)?$/.test(w) || nameW.indexOf(w) >= 0)) return null;
-    }
-    var found = {};                                                                  // bir neçə fərqli istiqamət varsa ("irəli sağa") qarışıqdır -> Gemini
-    for (var r = 0; r < RULES.length; r++) for (var j = 0; j < words.length; j++) if (RULES[r][1].indexOf(words[j]) !== -1) found[RULES[r][0]] = 1;
-    if (Object.keys(found).length !== 1) return null;
-    return parseVoiceFull(n);
+  // ===== YERLİ ƏMR FİLTRİ (Local Keyword Guard) =====
+  // Mətndə təməl hərəkət sözü varsa -> əmr LOKAL işlənir, Gemini-yə sorğu QƏTİYYƏN getmir.
+  // Yalnız uzun (>8 söz) və ya sual/söhbət xarakterli cümlələr Gemini-yə keçir.
+  var GUARD_MAX_WORDS = 8;
+  var GUARD_CHAT = /\b(nedir|nedi|niye|nece|kimdir|kimdi|hara|haradadir|nagil|hekaye|danis|izah|hesab|yaz|oxu|sual|cavab|ad[iı]n)\b/;
+  function guardCanon(n) {                                                           // tanıma səhvlərini / variantları kanonik formaya gətir
+    return n.replace(/\b(ileri|irali|irelli|ireli+)\b/g, 'ireli')
+            .replace(/\b(keri|gerie|geriy|gerı)\b/g, 'geri')
+            .replace(/\b(qabaqa|qabaga)\b/g, 'qabaga')
+            .replace(/\b(dondur|donun|donus|donub)\b/g, 'don');
   }
+  function localKeywordGuard(text) {
+    var n = norm(text); if (!n) return null;
+    n = guardCanon(n);
+    var words = n.split(' ').filter(Boolean);
+    if (!words.length || words.length > GUARD_MAX_WORDS) return null;
+    if (GUARD_CHAT.test(n)) return null;                                             // söhbət / sual: Gemini
+    var has = function (a) { return a.some(function (x) { return words.indexOf(x) !== -1; }); };
+    var isStop = has(['dayan', 'dayandir', 'stop', 'sakit']);
+    var isTurn = has(['don']);
+    var kwBack = has(['geri', 'geriye', 'arxaya', 'arxa']);
+    var kwFwd = has(['ireli', 'qabaga', 'qabag']);
+    var kwR = has(['saga', 'sag']), kwL = has(['sola', 'sol']);
+    if (!(isStop || kwBack || kwFwd || kwR || kwL)) return null;                     // heç bir təməl söz yoxdur -> Gemini
+    var cmd = parseVoiceFull(n);                                                     // eyni parser: dərəcə / sm / metr / saniyə də tanınır
+    if (cmd) return cmd;
+    if (isStop) return { drive: 'S' };
+    if (isTurn && has(['geriye', 'arxaya'])) return { drive: 'R', amount: 180, unit: 'deg' };
+    if (kwFwd) return { drive: 'F' };
+    if (kwBack) return { drive: 'B' };
+    if (kwR) return { drive: 'R' };
+    if (kwL) return { drive: 'L' };
+    return null;
+  }
+  function localSimpleCommand(text) { return localKeywordGuard(text); }
   function onLocalText(matches) {
     if (!voiceOn || !localOn) return;
     if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
@@ -1998,7 +2017,8 @@
     var began = uttBegan, t0 = Date.now();
     (function waitLocal() {
       if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // yerli əmr işləndi: API sorğusu YOXDUR
-      if (localSeenAt >= began || Date.now() - t0 >= LOCAL_WAIT_MS) { handleWav(wav); return; }
+      var lim = (Date.now() - localSeenAt < 30000) ? LOCAL_WAIT_ALIVE_MS : LOCAL_WAIT_MS;   // yerli tanıma son vaxtlar işləyibsə, nəticəni daha çox gözlə
+      if (localSeenAt >= began || Date.now() - t0 >= lim) { handleWav(wav); return; }
       setTimeout(waitLocal, 80);
     })();
   }
