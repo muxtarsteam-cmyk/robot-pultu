@@ -117,7 +117,7 @@
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v34</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v35</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -218,6 +218,8 @@
     <div class="row"><label for="localRec">Yerli tanıma</label><select id="localRec"><option value="1">Açıq (API-siz)</option><option value="0">Söndürülü</option></select></div>
     <div class="row"><label for="micMode">Mikrofon rejimi</label>
       <select id="micMode"><option value="auto">Davamlı (adla çağırış)</option><option value="ptt">Basıb saxla</option></select></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="localCmd" checked> ⚡ Yerli əmr tanıma (irəli / geri / sağa / sola / dayan Gemini-yə getmir)</label>
+    <div class="hint" id="localHint">Sadə hərəkət əmrləri telefonun öz səs tanıması ilə saniyəlik işlənir. Mikrofonla toqquşma olarsa və ya əmrlər tanınmazsa, bu xananı söndürün: onda bütün səslər Gemini ilə işlənir.</div>
     <div class="row"><label for="pauseMs">Susma gözləmə (ms)</label><input id="pauseMs" type="number" min="700" max="4000" step="100"></div>
     <div class="row"><label for="camFacing">Kamera</label>
       <select id="camFacing"><option value="environment">Arxa kamera</option><option value="user">Ön kamera</option></select></div>
@@ -795,7 +797,7 @@
     try { return j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('').trim(); } catch (e) { return ''; }
   }
   // ---------- API qənaəti: pauza, limit gözləməsi, statistika ----------
-  var apiStats = { calls: 0, img: 0, saved: 0, skipped: 0 }, quotaUntil = +sget('quota_until', 0) || 0, isRateLimited = Date.now() < quotaUntil, limitSpoken = false, minuteHits = [], lastApiAt = 0, apiChain = Promise.resolve(), gttsPause = 0;
+  var apiStats = { calls: 0, img: 0, saved: 0, skipped: 0, local: 0 }, quotaUntil = +sget('quota_until', 0) || 0, isRateLimited = Date.now() < quotaUntil, limitSpoken = false, minuteHits = [], lastApiAt = 0, apiChain = Promise.resolve(), gttsPause = 0;
   // ---------- Limit izləmə (Gemini istifadə qalığını bildirmir: sorğuları özümüz sayırıq) ----------
   function pacificDay() { try { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }); } catch (e) { return new Date().toISOString().slice(0, 10); } }
   function secsToPacificMidnight() {
@@ -851,7 +853,7 @@
   setInterval(limUpdate, 1000);
   $('limReset').addEventListener('click', function () { quotaUntil = 0; minuteHits = []; dayRec = { day: pacificDay(), n: 0 }; sset('api_day', JSON.stringify(dayRec)); sset('quota_until', 0); limitSpoken = false; limUpdate(); micUpdate(); note('Limit sayğacı sıfırlandı'); });
 
-  function updateApiInfo() { $('apiInfo').textContent = 'Sorğu: ' + apiStats.calls + ' (şəkilli: ' + apiStats.img + ') · Yerli cavab: ' + apiStats.saved + ' · Atılan: ' + apiStats.skipped; }
+  function updateApiInfo() { $('apiInfo').textContent = 'Sorğu: ' + apiStats.calls + ' (şəkilli: ' + apiStats.img + ') · Yerli cavab: ' + apiStats.saved + ' · Atılan: ' + apiStats.skipped + ' · Yerli əmr: ' + apiStats.local; }
   function apiThrottle() {                                   // ardıcıl sorğular arasında minimum pauza
     var p = apiChain.then(function () { var w = apiGap - (Date.now() - lastApiAt); return w > 0 ? sleep(w) : 0; }).then(function () { lastApiAt = Date.now(); });
     apiChain = p.catch(function () {}); return p;
@@ -1642,7 +1644,7 @@
   }
 
   var ctx = null, stream = null, srcNode = null, proc = null;
-  var preRoll = [], speech = [], speaking = false, silenceMs = 0, speechMs = 0;
+  var preRoll = [], speech = [], speaking = false, silenceMs = 0, speechMs = 0, uttBegan = 0;
   var noise = 0.008, busy = 0, curRate = 16000;
 
   function downsample(buf, inRate, outRate) {
@@ -1784,7 +1786,7 @@
       transcribe(wav).catch(function () { return ''; }).then(function (txt) { lastVoice.textContent = txt.slice(0, 140) || '—'; busy--; w.res(txt); });
       return;
     }
-    handleWav(wav);
+    localGate(wav);                                       // əvvəl yerli əmr tanıma: sadə hərəkət əmri olarsa, səs Gemini-yə GÖNDƏRİLMİR
   }
   function handleWav(wav) {
     if (isRateLimited) { apiStats.skipped++; updateApiInfo(); return; }                  // limit dolub: Gemini-yə heç nə göndərmə
@@ -1815,7 +1817,7 @@
     if (!speaking) {
       noise = noise * 0.97 + rms * 0.03;
       preRoll.push(chunk); if (preRoll.length > 8) preRoll.shift();
-      if (rms > thr) { speaking = true; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; updateVoiceBtn('talk'); }
+      if (rms > thr) { speaking = true; uttBegan = Date.now() - 500; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; updateVoiceBtn('talk'); }
     } else {
       speech.push(chunk); speechMs += ms;
       // danışıq zamanı həssaslıq artır (cümlənin sonundakı yumşaq hecalar susma sayılmasın)
@@ -1858,7 +1860,7 @@
         proc.onaudioprocess = onAudio;
         srcNode.connect(proc); proc.connect(ctx.destination);
         preRoll = []; speech = []; speaking = false; noise = 0.008;
-        voiceOn = true; updateVoiceBtn('idle'); micUpdate(); note(''); setTimeout(prewarmTTS, 1500);
+        voiceOn = true; updateVoiceBtn('idle'); micUpdate(); note(''); setTimeout(prewarmTTS, 1500); setTimeout(startLocal, 600);
       }).catch(function (e) {
         warn('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. İcazələri yoxlayın.');
       });
@@ -1877,7 +1879,7 @@
   var RULES = [
     ['S', ['dayandir', 'dayan', 'stop', 'sakit']],
     ['F', ['ireli', 'qabaga', 'qabag']],
-    ['B', ['geri', 'arxaya', 'arxa']],
+    ['B', ['geri', 'geriye', 'arxaya', 'arxa']],
     ['L', ['sola', 'sol']],
     ['R', ['saga', 'sag']]
   ];
@@ -1950,11 +1952,99 @@
     }, function () { note('Mikrofon icazəsi verilməyib'); });
   }
 
+  // =====================================================================
+  //  YERLİ ƏMR TANIMA (Gemini-siz): sadə hərəkət əmrləri telefonun öz səs tanıması ilə tanınır
+  //  Mürəkkəb / qeyri-standart cümlələr əvvəlki kimi Gemini-yə gedir.
+  // =====================================================================
+  var localOn = false, localRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
+  var LOCAL_WAIT_MS = 1300;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
+  var localSetting = sget('local_cmd', '1') === '1';
+  $('localCmd').checked = localSetting;
+  // Yalnız bu sözlərdən ibarət qısa cümlələr "sadə əmr" sayılır (başqa söz varsa -> Gemini)
+  var LOCAL_OK = {};
+  ('ireli qabaga qabag geri geriye arxaya arxa saga sag sola sol don donun dondur get git gedin gel dayan dayandir stop sakit derece metr m sm santimetr saniye san zehmet olmasa indi robot').split(' ').forEach(function (w) { LOCAL_OK[w] = 1; });
+  function localSimpleCommand(text) {
+    var n = norm(text); if (!n) return null;
+    var words = n.split(' ').filter(Boolean); if (!words.length || words.length > 7) return null;
+    var nameW = norm(robotName).split(' ');
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (!(LOCAL_OK[w] || NUMW[w] !== undefined || /^\d+([.,]\d+)?$/.test(w) || nameW.indexOf(w) >= 0)) return null;
+    }
+    var found = {};                                                                  // bir neçə fərqli istiqamət varsa ("irəli sağa") qarışıqdır -> Gemini
+    for (var r = 0; r < RULES.length; r++) for (var j = 0; j < words.length; j++) if (RULES[r][1].indexOf(words[j]) !== -1) found[RULES[r][0]] = 1;
+    if (Object.keys(found).length !== 1) return null;
+    return parseVoiceFull(n);
+  }
+  function onLocalText(matches) {
+    if (!voiceOn || !localOn) return;
+    if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
+    localSeenAt = Date.now();
+    var cmd = null, heard = '';
+    for (var i = 0; i < matches.length && !cmd; i++) { cmd = localSimpleCommand(matches[i]); if (cmd) heard = matches[i]; }
+    if (!cmd) return;                                                                // sadə əmr deyil: Gemini yolu davam edir
+    localHandledAt = Date.now();                                                     // bu səs Gemini-yə göndərilməyəcək
+    var key = norm(heard);
+    if (key === lastLocalKey && Date.now() - lastLocalT < 1200) return;              // eyni cümlənin təkrarı
+    lastLocalKey = key; lastLocalT = Date.now();
+    lastVoice.textContent = heard + ' ⚡'; logChat('İstifadəçi', heard);
+    apiStats.local++; updateApiInfo();
+    if (acting && cmd.drive !== 'S') return;                                         // başqa əməliyyat gedir (Gemini yolundakı kimi)
+    doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); });
+  }
+  // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
+  function localGate(wav) {
+    if (!localOn || micMode === 'ptt') { handleWav(wav); return; }
+    var began = uttBegan, t0 = Date.now();
+    (function waitLocal() {
+      if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // yerli əmr işləndi: API sorğusu YOXDUR
+      if (localSeenAt >= began || Date.now() - t0 >= LOCAL_WAIT_MS) { handleWav(wav); return; }
+      setTimeout(waitLocal, 80);
+    })();
+  }
+  function localLoop() {
+    if (!localOn || !voiceOn) return;
+    var sr = window.plugins && window.plugins.speechRecognition;
+    if (!sr) { localOn = false; return; }
+    try {
+      sr.startListening(function (matches) {
+        localErr = 0; try { onLocalText(matches || []); } catch (e) {} setTimeout(localLoop, 150);
+      }, function () {
+        localErr++;
+        if (localErr >= 8) { localOn = false; note('Yerli əmr tanıma işləmir (mikrofon toqquşması ola bilər). Əmrlər Gemini ilə işlənir.'); return; }
+        if (localErr === 3 && LANG === 'az-AZ') LANG = 'tr-TR';
+        setTimeout(localLoop, localErr > 2 ? 1500 : 500);
+      }, { language: LANG, matches: 5, showPopup: false, showPartial: false });
+    } catch (e) { localOn = false; }
+  }
+  function startLocal() {
+    stopLocal();
+    if (!apiKey || !localSetting || micMode === 'ptt') return;
+    var sr = window.plugins && window.plugins.speechRecognition, WSR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (sr) { localOn = true; localErr = 0; localLoop(); return; }
+    if (WSR) {                                                                       // brauzerdə (APK-dan kənar) Web Speech API
+      try {
+        localRec = new WSR(); localRec.lang = LANG; localRec.continuous = true; localRec.interimResults = false; localRec.maxAlternatives = 3;
+        localRec.onresult = function (e) { var r = e.results[e.results.length - 1], m = []; for (var i = 0; i < r.length; i++) m.push(r[i].transcript); onLocalText(m); };
+        localRec.onend = function () { if (localOn && voiceOn) { try { localRec.start(); } catch (e) {} } };
+        localRec.onerror = function () {};
+        localOn = true; localRec.start();
+      } catch (e) { localOn = false; localRec = null; }
+    }
+  }
+  function stopLocal() {
+    var was = localOn; localOn = false;
+    try { if (localRec) { localRec.onend = null; localRec.stop(); } } catch (e) {}
+    localRec = null;
+    if (was) { try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {} }
+  }
+  $('localCmd').addEventListener('change', function () { localSetting = this.checked; sset('local_cmd', localSetting ? '1' : '0'); if (voiceOn) { stopLocal(); startLocal(); } });
+
   // ---------- Ümumi düymələr ----------
   function startVoice() { unlockTTS(); apiKey ? startGemini() : startNative(); }
   function stopVoice() {
     voiceOn = false; pttHeld = false; pttBuf = []; pendingWav = null; updateVoiceBtn();
-    stopGemini();
+    stopLocal(); stopGemini();
     try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
   }
   (function () {
@@ -2009,7 +2099,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v34 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v35 ✓';
 })();
 </script>
 </body>
