@@ -131,7 +131,7 @@
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v32</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v33</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -430,6 +430,9 @@
       w(); setTimeout(w, 80); setTimeout(w, 200);
     } catch (e) {}
   }
+  // Heartbeat: qoşulu olduqca hər 300 ms 'H' göndərilir. Arduino 1 san 'H' (və ya başqa bayt) almasa əlaqəni kəsilmiş sayıb motorları dayandırır.
+  setInterval(function () { if (connected && BT && devAddr) { try { BT.write(devAddr, SPP, 'H', function () {}, function () {}); } catch (e) {} } }, 300);
+  window.addEventListener('pagehide', rawStop);
   function disconnect() {
     abortMission();
     rawStop();
@@ -2061,7 +2064,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v32 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v33 ✓';
 })();
 </script>
 </body>
