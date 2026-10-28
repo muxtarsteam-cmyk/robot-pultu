@@ -78,6 +78,9 @@
   .gdial { flex:0 0 64px; height:64px; border-radius:50%; border:2px solid #475569; position:relative; background:#0f172a; }
   .gdial i { position:absolute; left:calc(50% - 2px); top:5px; width:4px; height:27px; background:var(--accent); border-radius:2px; transform-origin:50% 100%; }
   .gdial u { position:absolute; left:calc(50% - 3px); top:-1px; width:6px; height:6px; border-radius:50%; background:var(--ok); }
+  .gdial b { position:absolute; left:calc(50% - 1px); top:5px; width:2px; height:27px; background:var(--ok); transform-origin:50% 100%; display:none; }
+  .gprog { height:8px; border-radius:4px; background:#334155; margin-top:8px; overflow:hidden; }
+  .gprog i { display:block; height:100%; width:0%; background:var(--ok); transition:width .08s linear; }
   .gtxt { flex:1; font-size:12px; color:var(--muted); line-height:1.5; }
   .gtxt b { color:var(--text); }
   #picker { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:20px; }
@@ -112,7 +115,7 @@
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v28</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v29</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -155,21 +158,24 @@
     <b style="font-size:13px">🧭 Giroskop monitoru</b>
     <div class="row"><button id="gyBtn" class="primary" style="flex:1">🧭 Giroskopu aktivləşdir (icazə ver)</button></div>
     <div class="gtop">
-      <div class="gdial"><u></u><i id="gyNeedle"></i></div>
+      <div class="gdial"><u></u><b id="gyTgt"></b><i id="gyNeedle"></i></div>
       <div class="gtxt"><span id="gyState">Giroskop aktiv deyil</span><br>Dönmə: <b id="gyTurn">—</b></div>
     </div>
+    <div class="gprog"><i id="gyProg"></i></div>
+    <div class="hint" id="gyPlan">Dönmə yoxdur: başlanğıc α → hədəf α burada görünəcək</div>
     <div class="gy">
       <div>α (alpha)<b id="gyA">—</b></div><div>β (beta)<b id="gyB">—</b></div><div>γ (gamma)<b id="gyG">—</b></div>
       <div>İstiqamət<b id="gyH">—</b></div><div>Sıfırdan fərq<b id="gyD">—</b></div><div>Ox / tezlik<b id="gyX">—</b></div>
     </div>
     <div class="row"><button id="gyZero" style="flex:0 0 96px">⟲ Sıfırla</button>
       <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="gyInv"> Dönmə istiqaməti tərsdir (robot "sağa" deyəndə sola dönürsə)</label>
     <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
   <div class="card" id="driveSpeedPanel">
     <div class="sl"><label>🚗 Hərəkət sürəti (irəli/geri): <b id="spdVal">100%</b></label><input type="range" id="motorSpeed" min="40" max="100" step="10"></div>
-    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v9.ino lazımdır.</div>
+    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v10.ino lazımdır.</div>
   </div>
   <div class="card">
     <div class="camrow">
@@ -405,17 +411,17 @@
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
-    var c = btn.dataset.c, cc = c === 'L' ? 'Q' : c === 'R' ? 'E' : c;          // Sola/Sağa düymələri dönmə sürəti şkalası ilə işləyir (Q/E)
-    var keep = null;
+    var c = btn.dataset.c, cc = c, keep = null;
     function down(e) {
       e.preventDefault(); if (mission || isSpeaking) abortMission(); btn.classList.add('active');
+      cc = (c === 'L' || c === 'R') ? slowCmd(c) : c;                              // Sola/Sağa düymələri dönmə sürəti şkalası ilə işləyir (Q/E)
       if (cc === 'Q' || cc === 'E') send(pctCmd());                                 // dönmədən əvvəl cari dönmə sürətini göndər
       else if (c !== 'S') send(driveCmd());                                         // irəli/geri: cari adi sürəti göndər
       send(cc);
       if (c !== 'S') { clearInterval(keep); keep = setInterval(function () { send(cc); }, 300); }          // basılı saxlananda əmri təkrarlayır (Arduino qoruması üçün)
       if (navigator.vibrate) navigator.vibrate(15);
     }
-    function up(e) { e.preventDefault(); clearInterval(keep); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') { send('S'); setTimeout(function () { send('S'); }, 120); } } }
+    function up(e) { e.preventDefault(); clearInterval(keep); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') stopBurst(); } }
     btn.addEventListener('pointerdown', down);
     btn.addEventListener('pointerup', up);
     btn.addEventListener('pointercancel', up);
@@ -963,6 +969,8 @@
   function pctToPwm(pct) { return Math.max(0, Math.min(255, Math.round((pct / 100) * 255))); }   // 0% -> 0, 100% -> 255
   function pctCmd() { return 'P' + pctToPwm(turnPct) + '\n'; }                                    // dönmə sürəti: P<0..255>\n (Arduino toInt kimi tam ədəd oxuyur)
   var gyroMode = sget('gyro_mode', 'auto');
+  var turnInvert = sget('turn_invert', '0') === '1';                    // 1 = motor naqilləri tərsdir: Q/E fiziki olaraq əks tərəfə döndərir (avtomatik aşkarlanır)
+  function slowCmd(dir) { return ((dir === 'R') !== turnInvert) ? 'E' : 'Q'; }    // istənilən istiqamət -> Arduino-ya gedən Q/E
   $('gyMode').value = gyroMode;
   function showPct() { $('turnPct').value = turnPct; $('turnPctVal').textContent = Math.round(turnPct) + '%'; $('turnPwmVal').textContent = pctToPwm(turnPct); }
   showPct(); $('turnAuto').checked = turnAuto;
@@ -974,15 +982,17 @@
   $('turnTest').addEventListener('click', function () {                 // sürəti hiss etmək üçün: seçilmiş dönmə sürəti ilə 1.5 san dön
     if (!connected || !BT) { warn('Bluetooth qoşulmayıb', true); return; }
     if (mission) abortMission();
-    send(pctCmd()); send('E');
-    var t0 = Date.now(), iv = setInterval(function () { if (Date.now() - t0 >= 1500) { clearInterval(iv); send('S'); setTimeout(function () { send('S'); }, 120); } else send('E'); }, 120);
+    var tc = slowCmd('R'); send(pctCmd()); send(tc);
+    var t0 = Date.now(), iv = setInterval(function () { if (Date.now() - t0 >= 1500) { clearInterval(iv); stopBurst(); } else send(tc); }, 120);
   });
   $('pwmTest').addEventListener('click', function () {                  // Arduino: PWM 40→255 pilləvari artır; sürət artmırsa problem aparatdadır (ENA/ENB jumperi)
     if (!connected || !BT) { warn('Bluetooth qoşulmayıb', true); return; }
     if (confirm('Robot ~8 saniyə irəli gedəcək (PWM 40, 80, 120, 160, 200, 255). Təkərləri havaya qaldırın. Davam edək?')) { if (mission) abortMission(); send('X'); }
   });
   $('turnAuto').addEventListener('change', function () { turnAuto = this.checked; sset('turn_auto', turnAuto ? '1' : '0'); });
-  function wrap180(a) { a = a % 360; if (a > 180) a -= 360; if (a <= -180) a += 360; return a; }
+  // 0°/360° sərhədini nəzərə alan ən qısa işarəli fərq: a - b  ->  (-180, 180].  Məs: angleDiff(5, 355) = +10, angleDiff(355, 5) = -10
+  function angleDiff(a, b) { var d = (a - b) % 360; if (d > 180) d -= 360; else if (d <= -180) d += 360; return d; }
+  function wrap180(a) { return angleDiff(a, 0); }
   // W3C DeviceOrientation fırlanma matrisi: alpha(Z) beta(X) gamma(Y). Telefonun ox vektorunun üfüqi proyeksiyasından istiqamət (saat əqrəbi, 0..360)
   function axisHeading(a, b, g, axis) {
     var r = Math.PI / 180, cx = Math.cos(b * r), sx = Math.sin(b * r), cy = Math.cos(g * r), sy = Math.sin(g * r), cz = Math.cos(a * r), sz = Math.sin(a * r);
@@ -998,13 +1008,43 @@
   function renderGyro(force) {
     var now = Date.now(); if (!force && now - gy.rendered < 100) return; gy.rendered = now;
     $('gyA').textContent = f1(gy.alpha) + '°'; $('gyB').textContent = f1(gy.beta) + '°'; $('gyG').textContent = f1(gy.gamma) + '°';
-    var rel = gy.heading == null ? null : wrap180(gy.heading - (gy.zero == null ? 0 : gy.zero));
+    var rel = gy.heading == null ? null : angleDiff(gy.heading, gy.zero == null ? 0 : gy.zero);
     $('gyH').textContent = gy.heading == null ? '—' : f1(gy.heading) + '°'; $('gyD').textContent = rel == null ? '—' : (rel > 0 ? '+' : '') + f1(rel) + '°';
     var el = Math.max(1, now - gy.t0); $('gyX').textContent = gy.curAxis.toUpperCase() + ' · ' + Math.round(gy.n * 1000 / el) + ' Hz';
     $('gyNeedle').style.transform = 'rotate(' + (rel == null ? 0 : rel) + 'deg)';
-    var tx = gt ? ('hədəf ' + f1(gt.target) + '° · indi ' + f1(gt.cum) + '°') : (gy.lastRes || '—'); $('gyTurn').textContent = tx;
-    $('gyState').textContent = !gy.on ? 'Giroskop aktiv deyil' : (now - gy.lastAt < 800 ? '✅ Giroskop işləyir' + (gy.abs ? ' (mütləq)' : ' (nisbi)') : '⚠ Məlumat gəlmir');
+    var tg = $('gyTgt');
+    if (gt) {                                                // aktiv dönmə: hədəf oxu (yaşıl), irəliləyiş zolağı, başlanğıc α → hədəf α
+      var tAlpha = (gt.startAlpha - gt.sign * gt.target + 720) % 360;
+      tg.style.display = 'block'; tg.style.transform = 'rotate(' + angleDiff(gt.startHeading + gt.sign * gt.target, gy.zero == null ? 0 : gy.zero) + 'deg)';
+      $('gyProg').style.width = Math.max(0, Math.min(100, gt.cum / gt.target * 100)) + '%';
+      $('gyPlan').textContent = 'Başlanğıc α ' + f1(gt.startAlpha) + '° → hədəf α ' + f1(tAlpha) + '° · keçilib ' + f1(gt.cum) + '° / ' + f1(gt.target) + '° · qalıb ' + f1(Math.max(0, gt.target - gt.cum)) + '°' + (gt.done ? ' · DAYANDI' : '');
+      $('gyTurn').textContent = 'hədəf ' + f1(gt.target) + '° · indi ' + f1(gt.cum) + '°';
+    } else {
+      tg.style.display = 'none'; $('gyProg').style.width = '0%'; $('gyTurn').textContent = gy.lastRes || '—';
+    }
+    $('gyState').textContent = !gy.on ? 'Giroskop aktiv deyil' : (now - gy.lastAt < 800 ? '✅ Giroskop işləyir' + (gy.abs ? ' (mütləq)' : ' (nisbi)') + (now - gy.rateAt < 500 ? ' + sürət sensoru' : '') : '⚠ Məlumat gəlmir');
     $('gyBtn').textContent = gy.on ? '✅ Giroskop aktivdir' : '🧭 Giroskopu aktivləşdir (icazə ver)';
+  }
+
+  // ---- DAYAN: S əmri bir dəfə yox, bir neçə dəfə göndərilir (Bluetooth paketi itərsə belə robot dayansın) ----
+  var burstTok = 0;
+  function stopBurst() {
+    var tok = ++burstTok; send('S');
+    [40, 100, 200, 350, 600, 900].forEach(function (t) { setTimeout(function () { if (tok === burstTok && !(gt && !gt.done)) send('S'); }, t); });
+  }
+  // ---- Dönmə bucağının qiymətləndirilməsi: HƏR sensor hadisəsində çağırılır, hədəfə çatan AN S göndərir ----
+  function evalTurn() {
+    if (!gt) return;
+    gt.cum = gt.rateOk ? Math.max(gt.cumO, gt.cumR) : gt.cumO;                // iki müstəqil ölçmədən hansı irəlidədirsə, ona görə dayan (ötmə riskinə qarşı)
+    if (gt.done) {
+      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v10.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
+      return;
+    }
+    if (gt.rateOk && !gt.rateChecked && gt.cumO >= 15) { gt.rateChecked = true; if (gt.cumR > gt.cumO * 1.6) gt.rateOk = false; }   // sürət sensoru anormal böyük göstərirsə, ona etibar etmə
+    if (gt.cum - gt.mark >= 0.4) { gt.mark = gt.cum; gt.progAt = Date.now(); }
+    if (gt.target - gt.cum <= gt.lead) {                                       // HƏDƏF BUCAĞA ÇATDI (və ya keçdi): dərhal Dayan
+      gt.done = true; gt.cumAtDone = gt.cum; gt.doneAt = Date.now(); stopBurst();
+    }
   }
   function onOri(e) {
     if (e.alpha == null || e.beta == null || e.gamma == null) return;
@@ -1013,64 +1053,81 @@
     gy.alpha = a; gy.beta = b; gy.gamma = g; gy.abs = !!e.absolute; gy.lastAt = Date.now(); gy.n++;
     var hy = axisHeading(a, b, g, 'y'), hz = axisHeading(a, b, g, 'z'), ax = pickAxis(hy, hz);
     gy.curAxis = ax; gy.heading = (ax === 'y' ? hy : hz).h;
-    if (gt) {                                              // aktiv dönmə: bucağı topla (0°-dən keçidlər düzgün hesablanır)
-      var hh = (gt.axis === 'y' ? hy : hz).h, d = wrap180(hh - gt.last); gt.last = hh; gt.cum += d * gt.sign;
-      if (!gt.done) {
-        if (Math.abs(gt.cum - gt.mark) >= 0.4) { gt.mark = gt.cum; gt.progAt = Date.now(); }
-        var left = gt.target - gt.cum;
-        if (left <= gt.lead) {                             // HƏDƏF BUCAĞA ÇATDI: dərhal Dayan (S)
-          gt.done = true; send('S'); setTimeout(function () { send('S'); }, 60);
-        }
-      }
+    if (gt) {                                              // aktiv dönmə: bucağı topla (0°/360° keçidləri angleDiff ilə düzgün hesablanır)
+      var hh = (gt.axis === 'y' ? hy : hz).h;
+      gt.cumO += angleDiff(hh, gt.last) * gt.sign; gt.last = hh;
+      evalTurn();
     }
     renderGyro(false);
   }
+  // İkinci, müstəqil ölçmə: giroskopun bucaq sürəti (rotationRate) inteqral edilir. Maqnit sahəsindən (motorlar) təsirlənmir.
+  function onMotion(e) {
+    var rr = e.rotationRate; if (!rr || rr.alpha == null || rr.beta == null || rr.gamma == null) return;
+    var now = performance.now(), dt = gy.rateT ? Math.min(0.2, (now - gy.rateT) / 1000) : 0; gy.rateT = now; gy.rateAt = Date.now();
+    if (!gt || gy.alpha == null || Date.now() - gy.lastAt > 400) return;
+    var r = Math.PI / 180, cx = Math.cos(gy.beta * r), sx = Math.sin(gy.beta * r), cy = Math.cos(gy.gamma * r), sy = Math.sin(gy.gamma * r);
+    var yawCCW = (-cx * sy) * rr.beta + sx * rr.gamma + (cx * cy) * rr.alpha;   // bucaq sürətinin şaquli oxa proyeksiyası (saat əqrəbinin əksinə müsbət)
+    gt.cumR += (-yawCCW) * dt * gt.sign;                                          // sağa (saat əqrəbi) müsbət
+    evalTurn();
+  }
   function gyroStart() {
-    var D = window.DeviceOrientationEvent;
+    var D = window.DeviceOrientationEvent, M = window.DeviceMotionEvent;
     if (!D) { $('gyState').textContent = '⚠ Bu cihazda giroskop yoxdur'; warn('Bu cihazda giroskop (DeviceOrientation) dəstəklənmir. Vaxt ilə dönmə istifadə olunacaq.', true); return; }
-    function attach() {
+    function attach(withMotion) {
       window.removeEventListener('deviceorientation', onOri); window.addEventListener('deviceorientation', onOri);
+      window.removeEventListener('devicemotion', onMotion); if (withMotion && M) window.addEventListener('devicemotion', onMotion);
       gy.on = true; gy.n = 0; gy.t0 = Date.now(); renderGyro(true);
       setTimeout(function () { if (gy.on && gy.n === 0) { $('gyState').textContent = '⚠ Giroskop məlumatı gəlmir'; warn('Giroskop məlumatı gəlmir. Telefon parametrlərində hərəkət sensorlarını yoxlayın.', true); } }, 1800);
     }
     if (typeof D.requestPermission === 'function') {      // iPhone/Safari: icazə yalnız toxunuşla istənilir
-      D.requestPermission().then(function (s) { if (s === 'granted') attach(); else warn('Giroskop icazəsi verilmədi', true); }).catch(function () { warn('Giroskop icazəsi alınmadı', true); });
-    } else attach();
+      var pm = (M && typeof M.requestPermission === 'function') ? M.requestPermission().catch(function () { return 'denied'; }) : Promise.resolve('granted');
+      D.requestPermission().then(function (s) { if (s === 'granted') pm.then(function (ms) { attach(ms === 'granted'); }); else warn('Giroskop icazəsi verilmədi', true); }).catch(function () { warn('Giroskop icazəsi alınmadı', true); });
+    } else attach(true);
   }
   $('gyBtn').addEventListener('click', gyroStart);
   $('gyZero').addEventListener('click', function () { gy.zero = gy.heading; gy.lastRes = ''; renderGyro(true); });
   $('gyMode').addEventListener('change', function () { gyroMode = this.value; sset('gyro_mode', gyroMode); });
+  $('gyInv').checked = turnInvert;
+  $('gyInv').addEventListener('change', function () { turnInvert = this.checked; sset('turn_invert', turnInvert ? '1' : '0'); });
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
 
-  // Bağlı dövrə (closed-loop) dönmə: slayderdəki zəif sürətlə (faiz → PWM) (Arduino 'Q'/'E' əmri) hədəf bucağa qədər dön, çatan kimi Dayan (S)
-  async function gyroTurn(dir, deg) {
+  // Bağlı dövrə (closed-loop) dönmə: startAlpha-dan hədəf bucağa qədər zəif sürətlə dön, hədəfə çatan AN Dayan (S)
+  async function gyroTurn(dir, deg, retried) {
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir (PWM 0), robot dönməz. Şkalanı artırın');
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
-    var maxMs = Math.max(20000, deg * 500 + 15000);                                              // ekstremal yavaş dönmə: hər dərəcə saniyələr çəkə bilər
-    var cmd = dir === 'R' ? 'E' : 'Q';
-    var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis,
-      startAlpha: gy.alpha, lead: gyroLead * (deg < 20 ? 0.5 : 1), done: false, bumped: 0, kicks: 0, progAt: Date.now() + 600 };
-    var t0 = Date.now(), lastSend = 0, stalled = false;
+    var maxMs = Math.max(10000, deg * 250 + 6000);                                               // mütləq yuxarı hədd: bundan sonra robot hökmən dayandırılır
+    var cmd = slowCmd(dir);
+    var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, cumO: 0, cumR: 0, rateOk: (Date.now() - gy.rateAt) < 500, rateChecked: false,
+      mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis, startAlpha: gy.alpha, startHeading: (axis === 'y' ? hy : hz).h,
+      lead: gyroLead * (deg < 20 ? 0.5 : 1), done: false, escalated: false, bumped: 0, kicks: 0, progAt: Date.now() + 600 };
+    burstTok++;                                                                                  // əvvəlki dayandırma təkrarlarını ləğv et
+    var t0 = Date.now(), lastSend = 0, stalled = false, wrongCum = null;
     try {
       try {
-        send(pctCmd());                                                                          // slayderdən dönmə sürəti (faiz) Arduino-ya göndərilir
+        send(pctCmd());                                                                          // slayderdən dönmə sürəti Arduino-ya
         send(cmd); lastSend = Date.now();
         while (!cur.done) {
           chk();
           var now = Date.now();
-          if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°)'); }
+          if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı'); }
           if (now - gy.lastAt > 800) { stalled = true; throw new Error('Giroskop məlumatı kəsildi, robot dayandı'); }
+          if (cur.cum <= -12) { wrongCum = cur.cum; break; }                                     // robot əks tərəfə dönür
           if (now - cur.progAt > 1500) {                                                         // tıxanma: robot yerindən tərpənmir
             if (turnAuto && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); cur.bumped++; sset('turn_pct', turnPct); showPct(); send(pctCmd()); cur.progAt = now; }
             else if (cur.kicks < 3) { cur.kicks++; send('K'); cur.progAt = now; }               // qısa başlanğıc impulsunu təkrarla
             else { stalled = true; throw new Error('Robot dönmür (' + Math.round(turnPct) + '%). Dönmə sürəti şkalasını artırın'); }
           }
           if (now - lastSend >= 120) { send(cmd); lastSend = now; }                              // Arduino qoruması üçün əmri təkrarla
-          await sleep(20);
+          await sleep(15);
         }
-      } finally {
-        send('S'); setTimeout(function () { send('S'); }, 120);
+      } finally { stopBurst(); }
+      if (wrongCum !== null) {                                                                   // istiqamət səhvi: avtomatik düzəlt və bir dəfə yenidən cəhd et
+        await wait(500);
+        if (retried) { stalled = true; throw new Error('Robot hər iki istiqamətdə əks tərəfə dönür. Telefonun robota bərk bərkidildiyini yoxlayın'); }
+        turnInvert = !turnInvert; sset('turn_invert', turnInvert ? '1' : '0'); $('gyInv').checked = turnInvert;
+        note('Robot əks tərəfə dönürdü: istiqamət avtomatik düzəldildi, yenidən cəhd edilir');
+        return await gyroTurn(dir, deg + Math.abs(wrongCum), true);
       }
       await wait(450);                                                                           // robot tam dayansın, qalıq bucağı ölç
       var err = cur.cum - deg;
@@ -1111,6 +1168,7 @@
   async function doDrive(r) {
     if (!/^[FBLRS]$/.test(r.drive || '')) return;
     if (r.drive === 'S') { abortMission(); send('S'); note(''); return; }
+    if (mission && mission.gyro && (r.drive === 'L' || r.drive === 'R')) { note('Dönmə davam edir. Dayandırmaq üçün "Dayan" deyin'); return; }   // eyni əmrin təkrarı dönməni yenidən başlatmasın
     if (mission) { if (mission.timed || r.manual) { abortMission(); await sleep(350); } else return; }       // yeni hərəkət əvvəlkini əvəz edir
     var plan = planMove(r);
     if (plan.ms < 120) note('Çox qısa müddət: dəqiqlik aşağı ola bilər');
@@ -1119,7 +1177,7 @@
     if (plan.cmd === 'L' || plan.cmd === 'R') {
       if (gyroReady()) {
         var gdeg = plan.deg;
-        await runMission(plan.label + ' (giroskop)', async function () { mission.timed = true; await gyroTurn(plan.cmd, gdeg); });
+        await runMission(plan.label + ' (giroskop)', async function () { mission.timed = true; mission.gyro = true; await gyroTurn(plan.cmd, gdeg); });
         return;
       }
       if (connected) note(gy.on ? 'Giroskop hazır deyil: vaxt ilə dönür' : 'Giroskop aktiv deyil: vaxt ilə dönür');
@@ -1895,12 +1953,13 @@
   window.__robotTest = {
     route: function () { return routeUtterance(new Blob([new Uint8Array(100)], { type: 'audio/wav' })); },
     handleUtterance: function () { handleUtterance([new Float32Array(16000)]); },
+    drive: function (r) { return doDrive(r); }, gyroState: function () { return { gt: gt && { cum: gt.cum, cumO: gt.cumO, cumR: gt.cumR, done: gt.done }, inv: turnInvert, last: gy.lastRes }; },
     setBT: function (b) { BT = b; }, setConn: function (a) { devAddr = a; setConnected(true, 'T'); }, setVisionGap: function (g) { visionGap = g; },
     setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v28 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v29 ✓';
 })();
 </script>
 </body>
