@@ -131,7 +131,7 @@
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v31</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v32</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -404,6 +404,7 @@
       setConnected(true, devName); note('');
     }, function (err) {
       var was = connected;
+      if (was) rawStop();                                                            // əlaqə qopdu: dərhal S göndər (Arduino-nun watchdog-u əlavə qoruma verir)
       setConnected(false); devAddr = null;
       if (was) abortMission();
       warn(was ? 'Bluetooth bağlantısı kəsildi' : 'Bluetooth qoşulmadı. Robotun işə düşdüyünü və cütləşdiyini yoxlayın.');
@@ -421,10 +422,20 @@
       }, function (m) { warn(m || 'Bluetooth açılmadı'); });
     });
   }
+  // Əlaqə kəsiləndə (və ya kəsilməzdən əvvəl) connected bayrağından asılı olmadan Arduino-ya birbaşa 'S' göndərir
+  function rawStop() {
+    try {
+      if (!BT || !devAddr) return;
+      var a = devAddr, w = function () { try { BT.write(a, SPP, 'S', function () {}, function () {}); } catch (e) {} };
+      w(); setTimeout(w, 80); setTimeout(w, 200);
+    } catch (e) {}
+  }
   function disconnect() {
     abortMission();
-    if (BT && devAddr) BT.disconnect(devAddr, SPP, function () {}, function () {});
+    rawStop();
+    var a = devAddr;
     setConnected(false); devAddr = null;
+    if (BT && a) setTimeout(function () { try { BT.disconnect(a, SPP, function () {}, function () {}); } catch (e) {} }, 400);   // S göndərilməsi üçün qısa gecikmə
   }
   connBtn.addEventListener('click', function () { connected ? disconnect() : connect(); });
 
@@ -442,10 +453,13 @@
     pivotMode = !!p; sset('turn_mode', pivotMode ? 'pivot' : 'spin'); showMode();
     if (connected && BT) { modeSentFor = pivotMode; modeSentAt = Date.now(); BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
   }
-  var TURN_CMDS = 'LRQE';
+  var TURN_CMDS = 'LRQE', MOVE_CMDS = 'FBLRQE', armSentAt = 0;
   function send(c) {
     var cs = String(c).replace(/\n/g, ''); lastCmd.textContent = (NAMES[c] || 'Sürət') + ' (' + cs + ')';
     if (!connected || !BT) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; try { console.log('[SİM] komanda: ' + cs); } catch (e) {} return; }
+    if (typeof c === 'string' && c.length === 1 && MOVE_CMDS.indexOf(c) >= 0 && Date.now() - armSentAt > 1500) {   // Arduino silahsızlanıbsa (watchdog) hərəkətdən əvvəl 'A' ilə silahlandır
+      armSentAt = Date.now(); BT.write(devAddr, SPP, 'A', function () {}, function () {});
+    }
     if (typeof c === 'string' && c.length === 1 && TURN_CMDS.indexOf(c) >= 0) {   // hər dönmədən əvvəl seçilmiş rejim Arduino-da olmalıdır (itkiyə qarşı 2 san-dən bir təkrar)
       var nw = Date.now();
       if (modeSentFor !== pivotMode || nw - modeSentAt > 2000) { modeSentFor = pivotMode; modeSentAt = nw; BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
@@ -2047,7 +2061,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v31 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v32 ✓';
 })();
 </script>
 </body>
