@@ -117,7 +117,7 @@
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v35</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v36</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -186,7 +186,7 @@
 
   <div class="card" id="driveSpeedPanel">
     <div class="sl"><label>🚗 Hərəkət sürəti (irəli/geri): <b id="spdVal">100%</b></label><input type="range" id="motorSpeed" min="40" max="100" step="10"></div>
-    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v10.ino lazımdır.</div>
+    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v11.ino lazımdır.</div>
   </div>
   <div class="card">
     <div class="camrow">
@@ -231,6 +231,17 @@
       <select id="ttsVoice"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
     <div class="row"><button id="setSave" class="primary" style="flex:1">Ayarları saxla</button></div>
     <div class="info"><span id="peopleInfo">Yaddaş boşdur</span><button id="peopleClear" style="padding:4px 8px;font-size:12px">Sil</button></div>
+  </details>
+
+  <details class="card" id="dbPanel">
+    <summary>📚 Yerli komanda bazası (Gemini-yə getmir)</summary>
+    <div class="hint">Burada olan ifadə səslə deyiləndə dərhal icra olunur, Gemini API-yə sorğu getmir. Bazada olmayan cümlələr Gemini-yə keçir.</div>
+    <div class="row"><input id="dbPhrase" type="text" placeholder="Yeni ifadə (məs. sağa bax)" autocomplete="off">
+      <select id="dbAction" style="flex:0 0 130px"><option value="R">Sağa dön 90°</option><option value="L">Sola dön 90°</option><option value="BACK_TURN">Geriyə dön 180°</option><option value="F">İrəli</option><option value="B">Geri</option><option value="S">Dayan</option></select>
+      <button id="dbAdd" class="primary">➕</button></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="dbExt"> Genişləndirilmiş yerli tanıma (“sağa 45 dərəcə dön”, “irəli 50 sm get” də bazasız yerli işlənsin)</label>
+    <div class="hint" id="dbCount"></div>
+    <div id="dbList"></div>
   </details>
 
   <div class="sim" id="simLine"></div>
@@ -1089,7 +1100,7 @@
     if (!gt) return;
     gt.cum = gt.rateOk ? Math.max(gt.cumO, gt.cumR) : gt.cumO;                // iki müstəqil ölçmədən hansı irəlidədirsə, ona görə dayan (ötmə riskinə qarşı)
     if (gt.done) {
-      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v10.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
+      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v11.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
       return;
     }
     if (gt.rateOk && !gt.rateChecked && gt.cumO >= 15) { gt.rateChecked = true; if (gt.cumR > gt.cumO * 1.6) gt.rateOk = false; }   // sürət sensoru anormal böyük göstərirsə, ona etibar etmə
@@ -1742,6 +1753,8 @@
     if (hn.length >= 8 && lastSpokenNorm && lastSpokenNorm.indexOf(hn) >= 0) return;                 // öz səsinin əksi
     if (hn && hn === lastHeardN && Date.now() - lastHeardT < 4000) return;                           // eyni cümlənin təkrarı
     lastHeardN = hn; lastHeardT = Date.now();
+    var dbHit = dbLookup(r.heard);                                                                   // Gemini səsi başa düşdü, amma ifadə bazadadır: bazadan icra et
+    if (dbHit) { release(); lastLocalKey = hn; lastLocalT = Date.now(); apiStats.local++; updateApiInfo(); logChat('İstifadəçi', r.heard); await doDrive(dbHit); return; }
     var intent = r.intent || 'none', needName = !(intent === 'stop' || intent === 'drive');
     if (needName && !(r.called || active)) return;
     if (mission && intent !== 'stop' && !(intent === 'drive' && (r.drive === 'S' || mission.timed))) return;   // tapşırıq gedir (hərəkət əmri istisna)
@@ -1994,36 +2007,82 @@
     if (kwL) return { drive: 'L' };
     return null;
   }
-  // ===== 1-ci MƏRHƏLƏ: YERLİ KOMANDA BAZASI (Local Dictionary) =====
-  // Açar = deyilən ifadə (oyanma sözü "ziko" avtomatik kənarlaşdırılır, ona görə "ziko sağa dön" də "sağa dön" kimi tapılır).
-  // Dəyər = icra olunacaq əmr. Yeni variant əlavə etmək üçün sadəcə siyahıya yazın.
-  var LOCAL_DB = [
-    { cmd: { drive: 'R', amount: 90,  unit: 'deg' }, say: ['sağa dön', 'sağa dönün', 'sağ tərəfə dön', 'sağa', 'sağ'] },          // giroskopik 90° sağa
-    { cmd: { drive: 'L', amount: 90,  unit: 'deg' }, say: ['sola dön', 'sola dönün', 'sol tərəfə dön', 'sola', 'sol'] },          // giroskopik 90° sola
-    { cmd: { drive: 'R', amount: 180, unit: 'deg' }, say: ['geriyə dön', 'geri dön', 'geriyə', 'arxaya dön', 'geriyə dönün'] },   // giroskopik 180° geriyə dönmə
-    { cmd: { drive: 'F' },                           say: ['irəli get', 'irəli', 'irəli yeri', 'düz get'] },                       // F
-    { cmd: { drive: 'B' },                           say: ['geri get', 'geri', 'geri çəkil'] },                                    // B
-    { cmd: { drive: 'S' },                           say: ['dayan', 'dayandır', 'stop', 'dur'] }                                   // S
-  ];
-  var LOCAL_MAP = null;
+  // ===== 1-ci MƏRHƏLƏ: YERLİ KOMANDA BAZASI (localCommandDatabase) =====
+  // Əvvəl BU baza yoxlanılır. İfadə tapılsa dərhal icra olunur və Gemini-yə HEÇ SORĞU GETMİR.
+  // Yalnız bazada olmayan cümlələr (suallar, söhbət, mürəkkəb əmrlər) Gemini-yə keçir.
+  // Əməllər: R = 90° sağa (giroskop), L = 90° sola (giroskop), BACK_TURN = 180° geriyə dönmə, F = irəli, B = geri, S = dayan.
+  var LOCAL_ACTIONS = {
+    R: { drive: 'R', amount: 90, unit: 'deg' }, L: { drive: 'L', amount: 90, unit: 'deg' },
+    BACK_TURN: { drive: 'R', amount: 180, unit: 'deg' },
+    F: { drive: 'F' }, B: { drive: 'B' }, S: { drive: 'S' }
+  };
+  var ACTION_LABELS = { R: 'Sağa dön (90°)', L: 'Sola dön (90°)', BACK_TURN: 'Geriyə dön (180°)', F: 'İrəli', B: 'Geri', S: 'Dayan' };
+  var DEFAULT_LOCAL_COMMANDS = {
+    'sağa dön': 'R', 'ziko sağa dön': 'R', 'sağa': 'R', 'sağ': 'R',
+    'sola dön': 'L', 'ziko sola dön': 'L', 'sola': 'L', 'sol': 'L',
+    'irəli get': 'F', 'ziko irəli get': 'F', 'irəli': 'F',
+    'geriyə dön': 'BACK_TURN', 'geriyə': 'BACK_TURN', 'arxaya dön': 'BACK_TURN',
+    'geri get': 'B', 'geri': 'B',
+    'dayan': 'S', 'ziko dayan': 'S', 'stop': 'S', 'dayandır': 'S'
+  };
+  var userLocalCommands = {};                                                        // istifadəçinin əlavə etdikləri: {"ifadə": "əməl"}
+  try { userLocalCommands = JSON.parse(sget('local_cmd_db', '{}')) || {}; } catch (e) { userLocalCommands = {}; }
+  var localCommandDatabase = {};                                                     // normallaşdırılmış ifadə -> əməl (axtarış üçün)
+  var localExtended = sget('local_ext', '0') === '1';                                // standart: SÖNDÜRÜLÜB (yalnız baza)
+  function rebuildLocalDB() {
+    localCommandDatabase = {};
+    [DEFAULT_LOCAL_COMMANDS, userLocalCommands].forEach(function (src) {
+      Object.keys(src).forEach(function (ph) { var k = norm(ph); if (k && LOCAL_ACTIONS[src[ph]]) localCommandDatabase[k] = src[ph]; });
+    });
+  }
+  rebuildLocalDB();
   function localWakeSet() {
     var w = { ziko: 1, zeko: 1, ziqo: 1, zigo: 1, siko: 1 };
     var rn = norm(robotName || ''); if (rn) w[rn] = 1;
     return w;
   }
   function dbLookup(text) {
-    if (!LOCAL_MAP) {                                                                // bir dəfə qurulur: normallaşdırılmış açar -> əmr
-      LOCAL_MAP = {};
-      LOCAL_DB.forEach(function (e) { e.say.forEach(function (ph) { LOCAL_MAP[norm(ph)] = e.cmd; }); });
+    var full = norm(text); if (!full) return null;
+    var act = localCommandDatabase[full];
+    if (!act) {
+      var toks = full.split(' ').filter(Boolean), wake = localWakeSet();
+      while (toks.length && wake[toks[0]]) toks.shift();                             // "ziko" ... kənarlaşdır
+      while (toks.length && wake[toks[toks.length - 1]]) toks.pop();                 // "... ziko" da ola bilər
+      act = localCommandDatabase[toks.join(' ')];
     }
-    var toks = norm(text).split(' ').filter(Boolean), wake = localWakeSet();
-    while (toks.length && wake[toks[0]]) toks.shift();                               // "ziko" ... kənarlaşdır
-    while (toks.length && wake[toks[toks.length - 1]]) toks.pop();                   // "... ziko" da ola bilər
-    var hit = LOCAL_MAP[toks.join(' ')];
-    return hit ? JSON.parse(JSON.stringify(hit)) : null;
+    return act ? JSON.parse(JSON.stringify(LOCAL_ACTIONS[act])) : null;
   }
-  // 1) dəqiq baza axtarışı -> 2) (hələ yerli) dərəcə/sm/yazılış variantları -> tapılmasa null => yalnız onda Gemini
-  function localSimpleCommand(text) { return dbLookup(text) || localKeywordGuard(text); }
+  // Baza tapmadısa: yalnız "Genişləndirilmiş yerli tanıma" açıqdırsa (dərəcə/sm ilə əmrlər) açar söz süzgəci; yoxsa null => Gemini
+  function localSimpleCommand(text) { return dbLookup(text) || (localExtended ? localKeywordGuard(text) : null); }
+  // ----- Baza redaktəsi (interfeys) -----
+  function renderLocalDB() {
+    var box = $('dbList'); if (!box) return; box.innerHTML = '';
+    function addRow(ph, act, user) {
+      var d = document.createElement('div'); d.className = 'row'; d.style.marginTop = '3px';
+      var t = document.createElement('span'); t.style.cssText = 'flex:1;font-size:12px;color:' + (user ? 'var(--text)' : 'var(--muted)');
+      t.textContent = '“' + ph + '” → ' + (ACTION_LABELS[act] || act) + (user ? '' : ' 🔒');
+      d.appendChild(t);
+      if (user) { var b = document.createElement('button'); b.textContent = '✕'; b.style.cssText = 'padding:3px 9px;flex:0 0 auto'; b.setAttribute('data-ph', ph); d.appendChild(b); }
+      box.appendChild(d);
+    }
+    Object.keys(userLocalCommands).forEach(function (ph) { addRow(ph, userLocalCommands[ph], true); });
+    Object.keys(DEFAULT_LOCAL_COMMANDS).forEach(function (ph) { addRow(ph, DEFAULT_LOCAL_COMMANDS[ph], false); });
+    $('dbCount').textContent = Object.keys(localCommandDatabase).length + ' ifadə bazadadır';
+  }
+  $('dbAdd').addEventListener('click', function () {
+    var ph = $('dbPhrase').value.trim(), act = $('dbAction').value;
+    if (!ph) { note('İfadə boş ola bilməz'); return; }
+    if (!LOCAL_ACTIONS[act]) return;
+    userLocalCommands[ph] = act; sset('local_cmd_db', JSON.stringify(userLocalCommands));
+    rebuildLocalDB(); renderLocalDB(); $('dbPhrase').value = ''; note('Bazaya əlavə olundu: ' + ph);
+  });
+  $('dbList').addEventListener('click', function (e) {
+    var ph = e.target && e.target.getAttribute && e.target.getAttribute('data-ph'); if (ph == null) return;
+    delete userLocalCommands[ph]; sset('local_cmd_db', JSON.stringify(userLocalCommands)); rebuildLocalDB(); renderLocalDB();
+  });
+  $('dbExt').checked = localExtended;
+  $('dbExt').addEventListener('change', function () { localExtended = this.checked; sset('local_ext', localExtended ? '1' : '0'); });
+  renderLocalDB();
   function onLocalText(matches) {
     if (!voiceOn || !localOn) return;
     if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
@@ -2148,7 +2207,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v35 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v36 ✓';
 })();
 </script>
 </body>
