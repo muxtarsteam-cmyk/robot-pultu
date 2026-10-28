@@ -81,7 +81,7 @@
     <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
     <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v25</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v26</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -115,7 +115,9 @@
     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span>0% (söndürülüb)</span><span>50%</span><span>100% (tam güc)</span></div>
     <div style="font-size:11px;color:var(--muted);margin-top:4px">Arduino-ya gedən PWM: <b id="turnPwmVal" style="color:var(--text)">64</b> / 255</div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="turnAuto"> Robot tıxananda sürəti avtomatik artır (+5%)</label>
-    <div class="hint">Bu sürət yalnız giroskoplu dönmədə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. 0% = motor sönür (PWM 0), 100% = tam güc (PWM 255). İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
+    <div class="row"><button id="turnTest" style="flex:1">▶ Dönmə sürətini sına (1.5 san)</button><button id="pwmTest" style="flex:1">🔧 PWM testi (Arduino)</button></div>
+    <div id="btEcho" class="hint">Arduino cavabı: —</div>
+    <div class="hint">Bu sürət ◀ ▶ düymələrinə və giroskoplu dönməyə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. Giroskop aktiv deyilsə, səsli dönmə vaxtla və adi sürətlə gedir. 0% = motor sönür (PWM 0), 100% = tam güc (PWM 255). İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
   </div>
 
   <div class="card" id="gyroPanel">
@@ -146,7 +148,7 @@
     <div class="sl"><label>90° kalibrləmə: <b id="turn90Val">700 ms</b></label><input type="range" id="turn90Ms" min="200" max="2500" step="10"></div>
     <div class="sl"><label>Hərəkət sürəti: <b id="cmVal">20 sm/san</b></label><input type="range" id="cmPerSec" min="5" max="80" step="1"></div>
     <div class="row"><label for="plainFwd" style="flex:0 0 120px">Məsafəsiz "irəli get"</label><select id="plainFwd"><option value="inf">Sonsuz (Dayan deyənə qədər)</option><option value="dist">Standart məsafə</option></select></div>
-    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v8.ino lazımdır.</div>
+    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v9.ino lazımdır.</div>
   </div>
 
   <div class="card">
@@ -313,10 +315,15 @@
   var PERM_BT = ['android.permission.BLUETOOTH_CONNECT', 'android.permission.BLUETOOTH_SCAN', 'android.permission.ACCESS_FINE_LOCATION'];
   var PERM_MIC = 'android.permission.RECORD_AUDIO', PERM_CAM = 'android.permission.CAMERA';
 
+  function listenBT() {                                                 // Arduino cavabını göstər (plugin dəstəkləyirsə): robotun həqiqətən aldığı PWM
+    try {
+      if (BT && BT.subscribe && devAddr) BT.subscribe(devAddr, SPP, '\n', function (d) { var el = $('btEcho'); if (el) el.textContent = 'Arduino cavabı: ' + String(d).trim(); }, function () {});
+    } catch (e) {}
+  }
   function setConnected(on, name) {
     connected = on;
     dot.classList.toggle('on', on);
-    if (on) setTimeout(function () { sendSpeed(); send(pctCmd()); }, 800);                 // qoşulanda seçilmiş sürətləri (adi + dönmə) Arduino-ya göndər
+    if (on) setTimeout(function () { sendSpeed(); send(pctCmd()); listenBT(); }, 800);                 // qoşulanda seçilmiş sürətləri (adi + dönmə) Arduino-ya göndər
     connText.textContent = on ? 'Qoşulub' + (name ? ': ' + name : '') : 'Qoşulmayıb';
     connBtn.textContent = on ? 'Ayır' : 'Bluetooth-a Qoşul';
     if (on) $('simLine').textContent = '';
@@ -393,11 +400,14 @@
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
-    var c = btn.dataset.c;
+    var c = btn.dataset.c, cc = c === 'L' ? 'Q' : c === 'R' ? 'E' : c;          // Sola/Sağa düymələri dönmə sürəti şkalası ilə işləyir (Q/E)
     var keep = null;
     function down(e) {
-      e.preventDefault(); if (mission || isSpeaking) abortMission(); btn.classList.add('active'); send(c);
-      if (c !== 'S') { clearInterval(keep); keep = setInterval(function () { send(c); }, 300); }          // basılı saxlananda əmri təkrarlayır (Arduino qoruması üçün)
+      e.preventDefault(); if (mission || isSpeaking) abortMission(); btn.classList.add('active');
+      if (cc === 'Q' || cc === 'E') send(pctCmd());                                 // dönmədən əvvəl cari dönmə sürətini göndər
+      else if (c !== 'S') send(driveCmd());                                         // irəli/geri: cari adi sürəti göndər
+      send(cc);
+      if (c !== 'S') { clearInterval(keep); keep = setInterval(function () { send(cc); }, 300); }          // basılı saxlananda əmri təkrarlayır (Arduino qoruması üçün)
       if (navigator.vibrate) navigator.vibrate(15);
     }
     function up(e) { e.preventDefault(); clearInterval(keep); if (btn.classList.contains('active')) { btn.classList.remove('active'); if (c !== 'S') { send('S'); setTimeout(function () { send('S'); }, 120); } } }
@@ -943,6 +953,8 @@
   var gyroLead = +sget('gyro_lead3', 0);                 // əyləc zamanı əlavə dönməni əvvəlcədən çıxmaq üçün (dərəcə), özü öyrənir (ultra-yavaş sürətdə çox kiçikdir)
   var turnPct = Math.max(0, Math.min(100, +sget('turn_pct', 25)));    // dönmə sürəti 0-100% (Arduino: P<PWM 0..255>\n)
   var turnAuto = sget('turn_auto', '0') === '1';                        // tıxananda avtomatik artırma (standart: söndürülüb)
+  var liveAt = {};
+  function liveSend(key, fn) { var n = Date.now(); if (connected && BT && n - (liveAt[key] || 0) >= 80) { liveAt[key] = n; send(fn()); } }
   function pctToPwm(pct) { return Math.max(0, Math.min(255, Math.round((pct / 100) * 255))); }   // 0% -> 0, 100% -> 255
   function pctCmd() { return 'P' + pctToPwm(turnPct) + '\n'; }                                    // dönmə sürəti: P<0..255>\n (Arduino toInt kimi tam ədəd oxuyur)
   var gyroMode = sget('gyro_mode', 'auto');
@@ -951,7 +963,18 @@
   showPct(); $('turnAuto').checked = turnAuto;
   $('turnPct').addEventListener('input', function () {
     turnPct = +this.value; sset('turn_pct', turnPct); showPct();
-    if (gt && !gt.done) send(pctCmd());                                 // dönmə gedərkən də dərhal tətbiq et
+    liveSend('turn', pctCmd);                                           // slayder hərəkət edərkən real vaxtda (hər 80 ms) Arduino-ya göndər
+  });
+  $('turnPct').addEventListener('change', function () { if (connected && BT) send(pctCmd()); });   // buraxanda son dəyər mütləq göndərilir
+  $('turnTest').addEventListener('click', function () {                 // sürəti hiss etmək üçün: seçilmiş dönmə sürəti ilə 1.5 san dön
+    if (!connected || !BT) { warn('Bluetooth qoşulmayıb', true); return; }
+    if (mission) abortMission();
+    send(pctCmd()); send('E');
+    var t0 = Date.now(), iv = setInterval(function () { if (Date.now() - t0 >= 1500) { clearInterval(iv); send('S'); setTimeout(function () { send('S'); }, 120); } else send('E'); }, 120);
+  });
+  $('pwmTest').addEventListener('click', function () {                  // Arduino: PWM 40→255 pilləvari artır; sürət artmırsa problem aparatdadır (ENA/ENB jumperi)
+    if (!connected || !BT) { warn('Bluetooth qoşulmayıb', true); return; }
+    if (confirm('Robot ~8 saniyə irəli gedəcək (PWM 40, 80, 120, 160, 200, 255). Təkərləri havaya qaldırın. Davam edək?')) { if (mission) abortMission(); send('X'); }
   });
   $('turnAuto').addEventListener('change', function () { turnAuto = this.checked; sset('turn_auto', turnAuto ? '1' : '0'); });
   function wrap180(a) { a = a % 360; if (a > 180) a -= 360; if (a <= -180) a += 360; return a; }
@@ -1845,7 +1868,7 @@
   $('mBack').addEventListener('click', function () { distDrive('B'); });
   function driveCmd() { return 'V' + pctToPwm(motorSpeed) + '\n'; }                                // irəli/geri sürəti: V<0..255>\n
   function sendSpeed() { if (connected && BT) send(driveCmd()); }
-  $('motorSpeed').addEventListener('input', function () { motorSpeed = +this.value; showCal(); recalc(); });
+  $('motorSpeed').addEventListener('input', function () { motorSpeed = +this.value; showCal(); recalc(); liveSend('drive', driveCmd); });
   $('motorSpeed').addEventListener('change', function () { sset('motor_speed', motorSpeed); sendSpeed(); });
   $('turn90Ms').addEventListener('input', function () { turn90Ms = +this.value; calSpeed = motorSpeed; sset('turn90_ms', turn90Ms); sset('cal_speed', calSpeed); showCal(); recalc(); });
   $('cmPerSec').addEventListener('input', function () { cmPerSec = +this.value; calSpeed = motorSpeed; sset('cm_per_sec', cmPerSec); sset('cal_speed', calSpeed); showCal(); recalc(); });
@@ -1880,7 +1903,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v25 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v26 ✓';
 })();
 </script>
 </body>
