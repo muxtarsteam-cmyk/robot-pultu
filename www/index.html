@@ -9,7 +9,7 @@
   :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --ok:#22c55e; --bad:#ef4444; --stop:#dc2626; --warn:#f59e0b; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
   html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  .app { max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)); }
+  .app { max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:8px; padding:calc(64px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)); }
   h1 { font-size:17px; margin:0; text-align:center; }
   .card { background:var(--card); border-radius:14px; padding:10px; }
   .status { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:14px; }
@@ -30,7 +30,7 @@
   #bS.active { background:#ff6b6b; }
   .note { font-size:12px; color:var(--warn); text-align:center; min-height:16px; }
   .note.err { background:#7f1d1d; color:#fff; border-radius:8px; padding:6px 8px; font-size:13px; }
-  .lim { position:sticky; top:0; z-index:5; background:var(--bg); padding:4px 0 2px; }
+  .lim { position:sticky; top:calc(60px + env(safe-area-inset-top)); z-index:5; background:var(--bg); padding:4px 0 2px; }
   .limbar { position:relative; height:10px; border-radius:6px; background:#334155; overflow:hidden; }
   .limfill { height:100%; width:0%; background:var(--ok); transition:width .8s ease, background .4s; }
   .limfill.warn { background:var(--warn); } .limfill.hot { background:#f97316; } .limfill.full { background:var(--stop); }
@@ -45,12 +45,23 @@
   .ctl span { font-size:13px; color:var(--muted); }
   .sl { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; color:var(--muted); }
   .sl label { flex:0 0 150px; } .sl b { color:var(--text); } .sl input[type=range] { flex:1; min-width:0; }
+  #batPanel { position:fixed; top:calc(6px + env(safe-area-inset-top)); right:8px; z-index:40; width:118px; background:var(--card); border:1px solid #334155; border-radius:10px; padding:5px 8px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,.4); }
+  #batPanel .bv { display:flex; align-items:center; justify-content:space-between; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ok); }
+  #batPanel.warn .bv { color:var(--warn); } #batPanel.low .bv { color:#ff6b6b; } #batPanel.stale .bv { color:var(--muted); }
+  #batPanel.low { border-color:var(--stop); box-shadow:0 0 0 2px #dc262688; }
+  #batPanel .bt { display:flex; align-items:center; gap:4px; margin-top:3px; color:var(--muted); font-size:11px; }
+  #batPanel input { width:52px; min-width:0; border:0; border-radius:6px; padding:3px 4px; background:#0f172a; color:var(--text); font-size:13px; text-align:center; user-select:text; -webkit-user-select:text; }
+  #batAlert { position:fixed; top:calc(6px + env(safe-area-inset-top)); left:8px; right:134px; z-index:41; display:none; align-items:center; gap:6px; background:var(--stop); color:#fff; border-radius:10px; padding:6px 8px; font-size:12px; font-weight:700; line-height:1.25; min-height:52px; animation:batblink 1s infinite; }
+  #batAlert.show { display:flex; } #batAlert span { flex:1; } #batAlert button { background:#7f1d1d; padding:6px 8px; font-size:12px; flex:0 0 auto; }
+  @keyframes batblink { 0%,100% { background:#dc2626; } 50% { background:#991b1b; } }
   .hint { font-size:11px; color:var(--muted); margin-top:4px; }
   .sim { font-size:11px; color:var(--warn); text-align:center; }
   .row { display:flex; gap:6px; margin-top:6px; align-items:center; }
   .row input, .row select { flex:1; min-width:0; border:0; border-radius:8px; padding:8px; background:#0f172a; color:var(--text); font-size:14px; user-select:text; -webkit-user-select:text; }
   .row label { font-size:12px; color:var(--muted); flex:0 0 110px; }
   .row button { padding:8px 12px; }
+  .row button.sel { background:var(--accent); box-shadow:0 0 0 2px #93c5fd inset; font-weight:700; }
+  .modeBtn small { display:block; font-size:10px; font-weight:400; opacity:.85; margin-top:2px; }
   .live { margin:6px 0 10px; padding:6px 8px 7px; border-radius:12px; background:#0b1220; border:1px solid #334155; transition:border-color .15s, box-shadow .15s; }
   .live.listen { border-color:#16a34a; box-shadow:0 0 0 2px #16a34a55; animation:lvpulse 1s infinite; }
   .live.think { border-color:#7c3aed; box-shadow:0 0 0 2px #7c3aed55; }
@@ -89,6 +100,11 @@
 </style>
 </head>
 <body>
+<div id="batAlert" role="alert"><span id="batAlertTxt">⚠ Batareya zəifdir!</span><button id="batAlertX" title="Bildirişi gizlət">✕</button></div>
+<div id="batPanel" class="stale" title="Batareya gərginliyi (Arduino A0)">
+  <div class="bv"><span>🔋</span><span id="batV">—</span></div>
+  <div class="bt"><span>Hədd</span><input id="batTh" type="number" inputmode="decimal" min="0" max="60" step="0.1" value="11"><span>V</span></div>
+</div>
 <div class="app">
   <div class="lim">
     <div class="limbar" id="limBar"><div class="limfill" id="limFill"></div><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div>
@@ -115,7 +131,7 @@
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v29</span></h1>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v31</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -143,6 +159,15 @@
     <button id="bB" data-c="B">▼<br>Geri</button>
   </div>
 
+  <div class="card" id="turnModePanel" style="border:1px solid var(--accent)">
+    <b style="font-size:14px">🔄 Dönmə rejimi</b>
+    <div class="row">
+      <button id="modeSpin" class="modeBtn" style="flex:1">🌀 Spin rejimi<small>4 təkər · əks istiqamət</small></button>
+      <button id="modePivot" class="modeBtn" style="flex:1">📍 Pivot rejimi<small>2 təkər · tək tərəf</small></button>
+    </div>
+    <div class="hint" id="modeHint"></div>
+  </div>
+
   <div class="card" id="turnSpeedPanel" style="border:1px solid var(--accent)">
     <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:14px">🐢 Dönmə Sürəti (Turning Speed)</b><b id="turnPctVal" style="font-size:22px;color:var(--accent);font-variant-numeric:tabular-nums">25%</b></div>
     <input type="range" id="turnPct" min="0" max="100" step="1" value="25" style="width:100%;margin-top:8px">
@@ -151,7 +176,7 @@
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="turnAuto"> Robot tıxananda sürəti avtomatik artır (+5%)</label>
     <div class="row"><button id="turnTest" style="flex:1">▶ Dönmə sürətini sına (1.5 san)</button><button id="pwmTest" style="flex:1">🔧 PWM testi (Arduino)</button></div>
     <div id="btEcho" class="hint">Arduino cavabı: —</div>
-    <div class="hint">Bu sürət ◀ ▶ düymələrinə və giroskoplu dönməyə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. Giroskop aktiv deyilsə, səsli dönmə vaxtla və adi sürətlə gedir. 0% = motor sönür (PWM 0), 100% = tam güc (PWM 255). İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
+    <div class="hint">Dönmə rejimi (Spin / Pivot) bütün dönmələrə (düymələr, səs, giroskop) tətbiq olunur. Bu sürət ◀ ▶ düymələrinə və giroskoplu dönməyə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. Giroskop aktiv deyilsə, səsli dönmə vaxtla və adi sürətlə gedir. 0% = motor sönür (PWM 0), 100% = tam güc (PWM 255). İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
   </div>
 
   <div class="card" id="gyroPanel">
@@ -328,13 +353,13 @@
 
   function listenBT() {                                                 // Arduino cavabını göstər (plugin dəstəkləyirsə): robotun həqiqətən aldığı PWM
     try {
-      if (BT && BT.subscribe && devAddr) BT.subscribe(devAddr, SPP, '\n', function (d) { var el = $('btEcho'); if (el) el.textContent = 'Arduino cavabı: ' + String(d).trim(); }, function () {});
+      if (BT && BT.subscribe && devAddr) BT.subscribe(devAddr, SPP, '\n', function (d) { var t = String(d).trim(), m = /^BAT:\s*(\d+(?:\.\d+)?)/i.exec(t); if (m) { onBattery(parseFloat(m[1])); return; } var el = $('btEcho'); if (el) el.textContent = 'Arduino cavabı: ' + t; }, function () {});
     } catch (e) {}
   }
   function setConnected(on, name) {
     connected = on;
     dot.classList.toggle('on', on);
-    if (on) setTimeout(function () { sendSpeed(); send(pctCmd()); listenBT(); }, 800);                 // qoşulanda seçilmiş sürətləri (adi + dönmə) Arduino-ya göndər
+    if (on) setTimeout(function () { sendSpeed(); send(pctCmd()); modeSentFor = null; setTurnMode(pivotMode); listenBT(); }, 800);                 // qoşulanda seçilmiş sürətləri (adi + dönmə) Arduino-ya göndər
     connText.textContent = on ? 'Qoşulub' + (name ? ': ' + name : '') : 'Qoşulmayıb';
     connBtn.textContent = on ? 'Ayır' : 'Bluetooth-a Qoşul';
     if (on) $('simLine').textContent = '';
@@ -403,11 +428,71 @@
   }
   connBtn.addEventListener('click', function () { connected ? disconnect() : connect(); });
 
+  // ---------- Dönmə rejimi: N = Spin (4 təkər), O = Pivot (tək tərəf işləyir) ----------
+  var pivotMode = sget('turn_mode', 'spin') === 'pivot';
+  var modeSentFor = null, modeSentAt = 0;                                           // Arduino-ya sonuncu göndərilən rejim və vaxt
+  function modeCmd() { return pivotMode ? 'O' : 'N'; }
+  function showMode() {
+    $('modeSpin').classList.toggle('sel', !pivotMode); $('modePivot').classList.toggle('sel', pivotMode);
+    $('modeHint').textContent = pivotMode
+      ? 'Pivot: "Sağa" = yalnız SOL təkərlər işləyir, SAĞ təkərlər dayanır (PWM 0). "Sola" = yalnız SAĞ təkərlər işləyir, SOL təkərlər dayanır.'
+      : 'Spin: dönmədə 4 təkər də işləyir (biri irəli, biri geri) və robot yerindəcə fırlanır.';
+  }
+  function setTurnMode(p) {
+    pivotMode = !!p; sset('turn_mode', pivotMode ? 'pivot' : 'spin'); showMode();
+    if (connected && BT) { modeSentFor = pivotMode; modeSentAt = Date.now(); BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
+  }
+  var TURN_CMDS = 'LRQE';
   function send(c) {
     var cs = String(c).replace(/\n/g, ''); lastCmd.textContent = (NAMES[c] || 'Sürət') + ' (' + cs + ')';
     if (!connected || !BT) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; try { console.log('[SİM] komanda: ' + cs); } catch (e) {} return; }
+    if (typeof c === 'string' && c.length === 1 && TURN_CMDS.indexOf(c) >= 0) {   // hər dönmədən əvvəl seçilmiş rejim Arduino-da olmalıdır (itkiyə qarşı 2 san-dən bir təkrar)
+      var nw = Date.now();
+      if (modeSentFor !== pivotMode || nw - modeSentAt > 2000) { modeSentFor = pivotMode; modeSentAt = nw; BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
+    }
     BT.write(devAddr, SPP, c, function () {}, function () { warn('Robota göndərmə xətası. Bluetooth bağlantısını yoxlayın.'); });
   }
+
+  // ---------- Batareya monitorinqi (Arduino "BAT:12.34" göndərir) ----------
+  var batTh = parseFloat(sget('bat_th', '11')); if (!(batTh >= 0)) batTh = 11;
+  var batV = null, batAt = 0, batLowCnt = 0, batLow = false, batDismissed = false, batLastSpoke = 0, batSpeaking = false;
+  var BAT_TEXT = 'Diqqət! Batareyanı enerjiyə qoyun, enerji zəifləyib!';
+  var BAT_NEED = 3, BAT_REPEAT_MS = 30000, BAT_HYST = 0.2, BAT_STALE_MS = 5000;   // 3 ardıcıl ölçü (motor yükündən anlıq düşmə yalançı xəbərdarlıq verməsin), 30 san-dən bir təkrar, 0.2V histerezis
+  $('batTh').value = batTh;
+  function batSpeak() {
+    if (batSpeaking || isSpeaking) return;                                          // robot danışırsa, növbəti saniyə yenidən yoxlanır
+    batSpeaking = true; batLastSpoke = Date.now();
+    isSpeaking = true; ttsBusyUntil = Date.now() + 60000; muteMic(true);            // robot öz səsini eşitməsin
+    var tk = speakToken, done = false;
+    function fin() { if (done) return; done = true; batSpeaking = false; if (tk === speakToken) endSpeakState(700); }
+    try { unlockTTS(); speakDevice(BAT_TEXT, pickLang()).then(fin, fin); } catch (e) { fin(); }   // speechSynthesis (və ya cihaz TTS pluginı)
+  }
+  function batRender() {
+    var p = $('batPanel'), fresh = batV !== null && (Date.now() - batAt) < BAT_STALE_MS;
+    $('batV').textContent = fresh ? batV.toFixed(1) + 'V' : '—';
+    p.classList.toggle('stale', !fresh);
+    p.classList.toggle('low', fresh && batLow);
+    p.classList.toggle('warn', fresh && !batLow && batV < batTh + 0.5);
+    var show = fresh && batLow && !batDismissed;
+    $('batAlert').classList.toggle('show', show);
+    if (show) $('batAlertTxt').textContent = '⚠ Batareya zəifdir! ' + batV.toFixed(1) + 'V < ' + batTh + 'V. Enerjiyə qoyun!';
+  }
+  function batEval(countNow) {
+    if (batV === null) return;
+    if (batV < batTh) { if (countNow) batLowCnt++; if (batLowCnt >= BAT_NEED) batLow = true; }
+    else if (batV >= batTh + BAT_HYST) { batLowCnt = 0; if (batLow) { batLow = false; batDismissed = false; } }
+    else if (countNow) batLowCnt = 0;
+    batRender();
+    if (batLow && !batDismissed && Date.now() - batLastSpoke >= BAT_REPEAT_MS) batSpeak();
+  }
+  function onBattery(v) { if (!(v >= 0)) return; batV = v; batAt = Date.now(); batEval(true); }
+  $('batTh').addEventListener('input', function () {
+    var v = parseFloat(String(this.value).replace(',', '.'));
+    if (v >= 0) { batTh = v; sset('bat_th', v); batLowCnt = 0; batLow = false; batLastSpoke = 0; batDismissed = false; if (batV !== null) { batLowCnt = (batV < batTh) ? BAT_NEED - 1 : 0; batEval(true); } else batRender(); }
+  });
+  $('batAlertX').addEventListener('click', function () { batDismissed = true; batRender(); });
+  setInterval(function () { batEval(false); }, 1000);                               // siqnal kəsilməsini izlə, təkrar xəbərdarlıq
+  batRender();
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
@@ -989,6 +1074,9 @@
     if (!connected || !BT) { warn('Bluetooth qoşulmayıb', true); return; }
     if (confirm('Robot ~8 saniyə irəli gedəcək (PWM 40, 80, 120, 160, 200, 255). Təkərləri havaya qaldırın. Davam edək?')) { if (mission) abortMission(); send('X'); }
   });
+  showMode();
+  $('modeSpin').addEventListener('click', function () { setTurnMode(false); });
+  $('modePivot').addEventListener('click', function () { setTurnMode(true); });
   $('turnAuto').addEventListener('change', function () { turnAuto = this.checked; sset('turn_auto', turnAuto ? '1' : '0'); });
   // 0°/360° sərhədini nəzərə alan ən qısa işarəli fərq: a - b  ->  (-180, 180].  Məs: angleDiff(5, 355) = +10, angleDiff(355, 5) = -10
   function angleDiff(a, b) { var d = (a - b) % 360; if (d > 180) d -= 360; else if (d <= -180) d += 360; return d; }
@@ -1959,7 +2047,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v29 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v31 ✓';
 })();
 </script>
 </body>
