@@ -1970,7 +1970,7 @@
   //  Mürəkkəb / qeyri-standart cümlələr əvvəlki kimi Gemini-yə gedir.
   // =====================================================================
   var localOn = false, localRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
-  var LOCAL_WAIT_MS = 1800, LOCAL_WAIT_ALIVE_MS = 2600;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
+  var LOCAL_WAIT_MS = 3000, LOCAL_WAIT_ALIVE_MS = 4500;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
   var localSetting = sget('local_cmd', '1') === '1';
   $('localCmd').checked = localSetting;
   // ===== YERLİ ƏMR FİLTRİ (Local Keyword Guard) =====
@@ -2083,31 +2083,47 @@
   $('dbExt').checked = localExtended;
   $('dbExt').addEventListener('change', function () { localExtended = this.checked; sset('local_ext', localExtended ? '1' : '0'); });
   renderLocalDB();
-  function onLocalText(matches) {
-    if (!voiceOn || !localOn) return;
-    if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
-    localSeenAt = Date.now();
-    var cmd = null, heard = '';
-    for (var i = 0; i < matches.length && !cmd; i++) { cmd = localSimpleCommand(matches[i]); if (cmd) heard = matches[i]; }
-    if (!cmd) return;                                                                // sadə əmr deyil: Gemini yolu davam edir
-    localHandledAt = Date.now();                                                     // bu səs Gemini-yə göndərilməyəcək
+  // ===== SƏS NƏTİCƏSİ (onresult): 1) ƏVVƏL BAZA  2) tapılsa İCRA + return  3) tapılmasa Gemini =====
+  // Robotun hərəkət funksiyası: bazadan gələn əmr burada icra olunur.
+  function executeRobotCommand(cmd, heard) {
+    localHandledAt = Date.now();                                                     // bu səs Gemini-yə HEÇ VAXT göndərilməyəcək (localGate bunu görür)
     var key = norm(heard);
     if (key === lastLocalKey && Date.now() - lastLocalT < 1200) return;              // eyni cümlənin təkrarı
     lastLocalKey = key; lastLocalT = Date.now();
     lastVoice.textContent = heard + ' ⚡'; logChat('İstifadəçi', heard);
     apiStats.local++; updateApiInfo();
-    if (acting && cmd.drive !== 'S') return;                                         // başqa əməliyyat gedir (Gemini yolundakı kimi)
+    if (acting && cmd.drive !== 'S') return;                                         // başqa əməliyyat gedir
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); });
+  }
+  function onLocalText(matches) {
+    if (!voiceOn || !localOn) return;
+    if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
+    var texts = [];
+    for (var k = 0; k < (matches || []).length; k++) { var t = String(matches[k] || ''); if (norm(t)) texts.push(t); }
+    if (!texts.length) return;                                                        // boş nəticə "yerli mətn gəldi" sayılmasın
+    // 1) ƏVVƏL localCommandDatabase yoxlanılır
+    for (var i = 0; i < texts.length; i++) {
+      var speechResult = texts[i];
+      var cmd = localSimpleCommand(speechResult);                                     // dbLookup(...) (+ istəyə görə genişləndirilmiş süzgəc)
+      if (cmd) {
+        // 2) Bazada VAR: dərhal icra et və DAYAN. Gemini-yə keçid yoxdur.
+        executeRobotCommand(cmd, speechResult);
+        return;
+      }
+    }
+    // 3) Bazada HEÇ BİRİ tapılmadı: yalnız indi localSeenAt işarələnir, localGate səsi Gemini-yə buraxır
+    localSeenAt = Date.now();
   }
   // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
   function localGate(wav) {
-    if (!localOn || micMode === 'ptt') { handleWav(wav); return; }
+    if (!localOn || micMode === 'ptt') { handleWav(wav); return; }                   // yerli tanıma işləmir: başqa yol yoxdur
     var began = uttBegan, t0 = Date.now();
     (function waitLocal() {
-      if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // yerli əmr işləndi: API sorğusu YOXDUR
-      var lim = (Date.now() - localSeenAt < 30000) ? LOCAL_WAIT_ALIVE_MS : LOCAL_WAIT_MS;   // yerli tanıma son vaxtlar işləyibsə, nəticəni daha çox gözlə
-      if (localSeenAt >= began || Date.now() - t0 >= lim) { handleWav(wav); return; }
-      setTimeout(waitLocal, 80);
+      if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // bazada tapıldı və icra olundu: Gemini YOXDUR
+      if (localSeenAt >= began) { handleWav(wav); return; }                           // yerli mətn gəldi, bazada yoxdur: Gemini
+      var lim = (Date.now() - localSeenAt < 30000) ? LOCAL_WAIT_ALIVE_MS : LOCAL_WAIT_MS;
+      if (Date.now() - t0 >= lim) { handleWav(wav); return; }                         // yerli tanıma heç nə qaytarmadı
+      setTimeout(waitLocal, 60);
     })();
   }
   function localLoop() {
