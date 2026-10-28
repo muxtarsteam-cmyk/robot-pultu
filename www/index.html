@@ -1994,7 +1994,36 @@
     if (kwL) return { drive: 'L' };
     return null;
   }
-  function localSimpleCommand(text) { return localKeywordGuard(text); }
+  // ===== 1-ci MƏRHƏLƏ: YERLİ KOMANDA BAZASI (Local Dictionary) =====
+  // Açar = deyilən ifadə (oyanma sözü "ziko" avtomatik kənarlaşdırılır, ona görə "ziko sağa dön" də "sağa dön" kimi tapılır).
+  // Dəyər = icra olunacaq əmr. Yeni variant əlavə etmək üçün sadəcə siyahıya yazın.
+  var LOCAL_DB = [
+    { cmd: { drive: 'R', amount: 90,  unit: 'deg' }, say: ['sağa dön', 'sağa dönün', 'sağ tərəfə dön', 'sağa', 'sağ'] },          // giroskopik 90° sağa
+    { cmd: { drive: 'L', amount: 90,  unit: 'deg' }, say: ['sola dön', 'sola dönün', 'sol tərəfə dön', 'sola', 'sol'] },          // giroskopik 90° sola
+    { cmd: { drive: 'R', amount: 180, unit: 'deg' }, say: ['geriyə dön', 'geri dön', 'geriyə', 'arxaya dön', 'geriyə dönün'] },   // giroskopik 180° geriyə dönmə
+    { cmd: { drive: 'F' },                           say: ['irəli get', 'irəli', 'irəli yeri', 'düz get'] },                       // F
+    { cmd: { drive: 'B' },                           say: ['geri get', 'geri', 'geri çəkil'] },                                    // B
+    { cmd: { drive: 'S' },                           say: ['dayan', 'dayandır', 'stop', 'dur'] }                                   // S
+  ];
+  var LOCAL_MAP = null;
+  function localWakeSet() {
+    var w = { ziko: 1, zeko: 1, ziqo: 1, zigo: 1, siko: 1 };
+    var rn = norm(robotName || ''); if (rn) w[rn] = 1;
+    return w;
+  }
+  function dbLookup(text) {
+    if (!LOCAL_MAP) {                                                                // bir dəfə qurulur: normallaşdırılmış açar -> əmr
+      LOCAL_MAP = {};
+      LOCAL_DB.forEach(function (e) { e.say.forEach(function (ph) { LOCAL_MAP[norm(ph)] = e.cmd; }); });
+    }
+    var toks = norm(text).split(' ').filter(Boolean), wake = localWakeSet();
+    while (toks.length && wake[toks[0]]) toks.shift();                               // "ziko" ... kənarlaşdır
+    while (toks.length && wake[toks[toks.length - 1]]) toks.pop();                   // "... ziko" da ola bilər
+    var hit = LOCAL_MAP[toks.join(' ')];
+    return hit ? JSON.parse(JSON.stringify(hit)) : null;
+  }
+  // 1) dəqiq baza axtarışı -> 2) (hələ yerli) dərəcə/sm/yazılış variantları -> tapılmasa null => yalnız onda Gemini
+  function localSimpleCommand(text) { return dbLookup(text) || localKeywordGuard(text); }
   function onLocalText(matches) {
     if (!voiceOn || !localOn) return;
     if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
