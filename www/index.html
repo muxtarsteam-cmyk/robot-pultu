@@ -51,7 +51,19 @@
   .row input, .row select { flex:1; min-width:0; border:0; border-radius:8px; padding:8px; background:#0f172a; color:var(--text); font-size:14px; user-select:text; -webkit-user-select:text; }
   .row label { font-size:12px; color:var(--muted); flex:0 0 110px; }
   .row button { padding:8px 12px; }
-  #botLine { margin-top:8px; font-size:13px; min-height:18px; color:#c4b5fd; }
+  .live { margin:6px 0 10px; padding:6px 8px 7px; border-radius:12px; background:#0b1220; border:1px solid #334155; transition:border-color .15s, box-shadow .15s; }
+  .live.listen { border-color:#16a34a; box-shadow:0 0 0 2px #16a34a55; animation:lvpulse 1s infinite; }
+  .live.think { border-color:#7c3aed; box-shadow:0 0 0 2px #7c3aed55; }
+  .live.say { border-color:#0ea5e9; box-shadow:0 0 0 2px #0ea5e955; }
+  @keyframes lvpulse { 0%,100% { box-shadow:0 0 0 2px #16a34a33; } 50% { box-shadow:0 0 0 5px #16a34a66; } }
+  .live .chip { margin:0 0 5px; font-size:14px; font-weight:600; }
+  .lvrow { margin-top:4px; }
+  .lvlab { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  #lastVoice { font-size:20px; font-weight:700; line-height:1.25; color:#fff; min-height:25px; word-break:break-word; }
+  #lastVoice::before { content:'Tanınan əmr: “'; font-size:12px; font-weight:400; color:var(--muted); }
+  #lastVoice::after { content:'”'; font-size:12px; font-weight:400; color:var(--muted); }
+  #botLine { font-size:14px; min-height:18px; color:#c4b5fd; word-break:break-word; max-height:3.9em; overflow:auto; }
+  #missionLine { font-size:12px; color:var(--text); }
   .camrow { display:flex; gap:8px; }
   .camwrap { position:relative; flex:0 0 128px; height:96px; background:#0f172a; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
   .camwrap video { width:100%; height:100%; object-fit:cover; display:none; }
@@ -79,9 +91,28 @@
     <div class="limbar" id="limBar"><div class="limfill" id="limFill"></div><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div>
     <div class="limscale"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
     <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
-    <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
   </div>
-  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v26</span></h1>
+
+  <div class="live" id="liveBox">
+    <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
+    <div class="lvrow"><span class="lvlab">🎧 Robot səni belə başa düşdü</span><div id="lastVoice">—</div></div>
+    <div class="lvrow"><span class="lvlab">🤖 Robotun reaksiyası</span><div id="botLine">—</div></div>
+    <div class="lvrow"><span class="lvlab">⚙ Əmr statusu</span><div id="missionLine">Tapşırıq yoxdur</div></div>
+  </div>
+
+  <div class="card" id="voicePanel">
+    <button class="voice" id="voiceBtn">🎤 Səs idarəsi: Söndürülüb</button>
+    <button class="voice" id="pttBtn" style="display:none;margin-top:6px;background:#0ea5e9">🗣 Basıb saxla və danış</button>
+    <div class="row"><button id="ttsTest" style="flex:1">🔊 Səs testi</button></div>
+    <div class="row">
+      <label for="nameInput">Robotun adı</label>
+      <input id="nameInput" type="text" placeholder="Ziko" autocomplete="off">
+      <button id="nameSave">Saxla</button>
+    </div>
+    <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
+    <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
+  </div>
+  <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v28</span></h1>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -98,7 +129,7 @@
       <span><span class="dot" id="dot"></span><span id="connText">Qoşulmayıb</span></span>
       <button class="primary" id="connBtn">Bluetooth-a Qoşul</button>
     </div>
-    <div class="info"><span>Son komanda: <b id="lastCmd">—</b></span><span>Səs: <b id="lastVoice">—</b></span></div>
+    <div class="info"><span>Son komanda: <b id="lastCmd">—</b></span></div>
   </div>
 
   <div class="pad">
@@ -136,35 +167,10 @@
     <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
-  <div class="card" id="ctlPanel">
-    <b style="font-size:13px">🎛 Dəqiq idarəetmə və kalibrləmə</b>
-    <div class="ctl"><button id="tRight">↻ Sağa dön</button><input id="degR" type="number" min="1" max="720" value="90"><span>°</span></div>
-    <div class="ctl"><button id="tLeft">↺ Sola dön</button><input id="degL" type="number" min="1" max="720" value="90"><span>°</span></div>
-    <div class="ctl"><button id="tBack">⟲ Geriyə dön</button><input id="degB" type="number" min="1" max="720" value="180"><span>°</span></div>
-    <div class="ctl"><input id="distVal" type="number" min="1" step="1" value="50" placeholder="boş" style="flex:0 0 72px"><select id="distUnit" style="flex:0 0 62px;border:0;border-radius:8px;padding:8px;background:#0f172a;color:var(--text)"><option value="cm">sm</option><option value="m">m</option></select>
-      <button id="mFwd">▲ İrəli get</button><button id="mBack">▼ Geri get</button></div>
-    <div class="hint">Məsafə xanası boşdursa robot dayan deyənə qədər gedir.</div>
-    <div class="sl"><label>Motor sürəti: <b id="spdVal">100%</b></label><input type="range" id="motorSpeed" min="40" max="100" step="10"></div>
-    <div class="sl"><label>90° kalibrləmə: <b id="turn90Val">700 ms</b></label><input type="range" id="turn90Ms" min="200" max="2500" step="10"></div>
-    <div class="sl"><label>Hərəkət sürəti: <b id="cmVal">20 sm/san</b></label><input type="range" id="cmPerSec" min="5" max="80" step="1"></div>
-    <div class="row"><label for="plainFwd" style="flex:0 0 120px">Məsafəsiz "irəli get"</label><select id="plainFwd"><option value="inf">Sonsuz (Dayan deyənə qədər)</option><option value="dist">Standart məsafə</option></select></div>
-    <div class="hint">Sürət slideri üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v9.ino lazımdır.</div>
+  <div class="card" id="driveSpeedPanel">
+    <div class="sl"><label>🚗 Hərəkət sürəti (irəli/geri): <b id="spdVal">100%</b></label><input type="range" id="motorSpeed" min="40" max="100" step="10"></div>
+    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v9.ino lazımdır.</div>
   </div>
-
-  <div class="card">
-    <button class="voice" id="voiceBtn">🎤 Səs idarəsi: Söndürülüb</button>
-    <button class="voice" id="pttBtn" style="display:none;margin-top:6px;background:#0ea5e9">🗣 Basıb saxla və danış</button>
-    <div class="row"><button id="ttsTest" style="flex:1">🔊 Səs testi</button></div>
-    <div id="botLine"></div>
-    <div class="row">
-      <label for="nameInput">Robotun adı</label>
-      <input id="nameInput" type="text" placeholder="Ziko" autocomplete="off">
-      <button id="nameSave">Saxla</button>
-    </div>
-    <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
-    <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur: telefonun səs tanıması istifadə olunur</div>
-  </div>
-
   <div class="card">
     <div class="camrow">
       <div class="camwrap"><video id="cam" autoplay playsinline muted></video><span id="camHint">Kamera söndürülüb</span></div>
@@ -181,12 +187,12 @@
       <select id="memKind" style="flex:0 0 78px"><option value="object">Əşya</option><option value="person">Şəxs</option></select>
       <button id="memSave">💾</button></div>
     <div class="row"><button id="idBtn" style="flex:1">🏷 Bu nədir? / Bu kimdir?</button></div>
-    <div class="info"><span id="missionLine">Tapşırıq yoxdur</span></div>
   </div>
 
   <details class="card">
     <summary>⚙ Ayarlar və tanınan şəxslər</summary>
     <div class="row"><label for="searchDeg">Axtarış addımı</label><select id="searchDeg"><option value="30">30°</option><option value="45">45°</option><option value="60">60°</option></select></div>
+    <div class="row"><label for="plainFwd">Məsafəsiz "irəli get"</label><select id="plainFwd"><option value="inf">Sonsuz (Dayan deyənə qədər)</option><option value="dist">Standart məsafə</option></select></div>
     <div class="row"><label for="defCm">Standart məsafə (sm)</label><input id="defCm" type="number" min="5" max="300" step="5"></div>
     <div class="row"><label for="rpmLimit">Limit: dəqiqədə</label><input id="rpmLimit" type="number" min="1" max="1000" step="1"></div>
     <div class="row"><label for="rpdLimit">Limit: gündə</label><input id="rpdLimit" type="number" min="1" max="100000" step="10"></div>
@@ -260,7 +266,7 @@
 
   nameInput.value = robotName;
   if (apiKey) keyInput.value = apiKey;
-  $('turn90Ms').value = turn90Ms; $('cmPerSec').value = cmPerSec; $('motorSpeed').value = motorSpeed; $('plainFwd').value = plainFwd; $('searchDeg').value = searchDeg; $('defCm').value = defCm; $('rpmLimit').value = rpmLimit; $('rpdLimit').value = rpdLimit; $('apiGap').value = apiGap; $('localRec').value = localRec; $('micMode').value = micMode; $('pauseMs').value = pauseMs;
+  $('motorSpeed').value = motorSpeed; $('plainFwd').value = plainFwd; $('searchDeg').value = searchDeg; $('defCm').value = defCm; $('rpmLimit').value = rpmLimit; $('rpdLimit').value = rpdLimit; $('apiGap').value = apiGap; $('localRec').value = localRec; $('micMode').value = micMode; $('pauseMs').value = pauseMs;
   $('camFacing').value = camFacing; $('ttsLang').value = ttsLang; $('ttsEngine').value = ttsEngine; $('ttsVoice').value = ttsVoiceName;
 
   function updateMode() {
@@ -271,7 +277,7 @@
     $('peopleInfo').textContent = all.length ? 'Yaddaş: ' + all.join(', ') : 'Yaddaş boşdur';
   }
   updateMode(); updatePeople(); recalc();
-  function showCal() { $('spdVal').textContent = motorSpeed + '%'; $('turn90Val').textContent = turn90Ms + ' ms'; $('cmVal').textContent = cmPerSec + ' sm/san'; }
+  function showCal() { $('spdVal').textContent = motorSpeed + '%'; }
   showCal();
 
   function keyHint() { $('keyState').textContent = apiKey ? 'Aktiv açar: ••••' + apiKey.slice(-4) + (goodModel ? ' · ' + goodModel : '') : 'Açar daxil edilməyib'; }
@@ -297,8 +303,7 @@
     robotName = v; sset('robot_name', v); note('Robotun adı: ' + v);
   });
   $('setSave').addEventListener('click', function () {
-    turn90Ms = Math.max(100, +$('turn90Ms').value || 700); cmPerSec = Math.max(3, +$('cmPerSec').value || 20); defCm = Math.max(5, +$('defCm').value || 50);
-    sset('turn90_ms', turn90Ms); sset('cm_per_sec', cmPerSec); sset('def_cm', defCm);
+    defCm = Math.max(5, +$('defCm').value || 50); sset('def_cm', defCm);
     rpmLimit = Math.max(1, +$('rpmLimit').value || 10); rpdLimit = Math.max(1, +$('rpdLimit').value || 250); sset('rpm_limit', rpmLimit); sset('rpd_limit', rpdLimit); limUpdate();
     apiGap = Math.min(10000, Math.max(0, +$('apiGap').value || 0)); localRec = $('localRec').value; sset('api_gap', apiGap); sset('local_rec', localRec);
     searchDeg = +$('searchDeg').value || 45; sset('search_deg', searchDeg); recalc();
@@ -1525,6 +1530,7 @@
       else { cls = ''; txt = '🎤 Hazıram: "' + robotName + '" deyin'; }
     }
     $('stateChip').className = 'chip ' + cls; $('stateChip').textContent = txt;
+    $('liveBox').className = 'live' + (cls === 'listen' ? ' listen' : cls === 'think' ? ' think' : cls === 'say' ? ' say' : '');   // dinləyəndə qutu yaşıl yanıb-sönür
   }
 
   var ctx = null, stream = null, srcNode = null, proc = null;
@@ -1621,7 +1627,7 @@
     var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 900, fast: true });
     var r = parseJSON(t);
     if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
-    lastVoice.textContent = String(r.heard || '—').slice(0, 40);
+    lastVoice.textContent = String(r.heard || '—').slice(0, 140);
     var hn = norm(r.heard);
     if (hn.length >= 8 && lastSpokenNorm && lastSpokenNorm.indexOf(hn) >= 0) return;                 // öz səsinin əksi
     if (hn && hn === lastHeardN && Date.now() - lastHeardT < 4000) return;                           // eyni cümlənin təkrarı
@@ -1667,7 +1673,7 @@
     if (replyWaiter) {                                    // robot sual verib, cavab gözləyir
       var w = replyWaiter; replyWaiter = null; clearTimeout(w.t);
       busy++; updateVoiceBtn('send');
-      transcribe(wav).catch(function () { return ''; }).then(function (txt) { lastVoice.textContent = txt.slice(0, 40) || '—'; busy--; w.res(txt); });
+      transcribe(wav).catch(function () { return ''; }).then(function (txt) { lastVoice.textContent = txt.slice(0, 140) || '—'; busy--; w.res(txt); });
       return;
     }
     handleWav(wav);
@@ -1859,19 +1865,10 @@
   function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
   $('idBtn').addEventListener('click', guarded(function () { return identifySubject(); }));
   $('memSave').addEventListener('click', guarded(function () { return rememberSubject($('memName').value, $('memKind').value); }));
-  function degVal(id, def) { var v = parseFloat($(id).value); return v > 0 ? v : def; }
-  $('tRight').addEventListener('click', function () { doDrive({ drive: 'R', amount: degVal('degR', 90), unit: 'deg', manual: true }); });
-  $('tLeft').addEventListener('click', function () { doDrive({ drive: 'L', amount: degVal('degL', 90), unit: 'deg', manual: true }); });
-  $('tBack').addEventListener('click', function () { doDrive({ drive: 'R', amount: degVal('degB', 180), unit: 'deg', manual: true }); });
-  function distDrive(dir) { var v = parseFloat($('distVal').value); doDrive(v > 0 ? { drive: dir, amount: v, unit: $('distUnit').value, manual: true } : { drive: dir, continuous: true, manual: true }); }
-  $('mFwd').addEventListener('click', function () { distDrive('F'); });
-  $('mBack').addEventListener('click', function () { distDrive('B'); });
   function driveCmd() { return 'V' + pctToPwm(motorSpeed) + '\n'; }                                // irəli/geri sürəti: V<0..255>\n
   function sendSpeed() { if (connected && BT) send(driveCmd()); }
   $('motorSpeed').addEventListener('input', function () { motorSpeed = +this.value; showCal(); recalc(); liveSend('drive', driveCmd); });
   $('motorSpeed').addEventListener('change', function () { sset('motor_speed', motorSpeed); sendSpeed(); });
-  $('turn90Ms').addEventListener('input', function () { turn90Ms = +this.value; calSpeed = motorSpeed; sset('turn90_ms', turn90Ms); sset('cal_speed', calSpeed); showCal(); recalc(); });
-  $('cmPerSec').addEventListener('input', function () { cmPerSec = +this.value; calSpeed = motorSpeed; sset('cm_per_sec', cmPerSec); sset('cal_speed', calSpeed); showCal(); recalc(); });
   $('plainFwd').addEventListener('change', function () { plainFwd = this.value; sset('plain_fwd', plainFwd); });
   $('lookBtn').addEventListener('click', guarded(function () { if (!cooldownOk('look')) { note('Bir az gözləyin'); return Promise.resolve(); } return describeView(''); }));
   $('doorBtn').addEventListener('click', guarded(function () { return runMission('Qapını tap', missionDoor); }));
@@ -1903,7 +1900,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v26 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v28 ✓';
 })();
 </script>
 </body>
