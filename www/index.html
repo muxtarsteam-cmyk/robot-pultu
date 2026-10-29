@@ -120,7 +120,7 @@
 
   <div class="live" id="liveBox">
     <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
-    <div class="lvrow"><span class="lvlab">🎧 Robot səni belə başa düşdü</span><div id="lastVoice">—</div></div>
+    <div class="lvrow"><span class="lvlab">🎧 Robot səni belə başa düşdü</span><div id="lastVoice">—</div><div id="wakeBadge" style="font-size:12px;margin-top:4px;color:var(--muted)">💤 Yuxudadır</div></div>
     <div class="lvrow"><span class="lvlab">🤖 Robotun reaksiyası</span><div id="botLine">—</div></div>
     <div class="lvrow"><span class="lvlab">⚙ Əmr statusu</span><div id="missionLine">Tapşırıq yoxdur</div></div>
   </div>
@@ -797,7 +797,7 @@
   function endSpeakState(delay) {
     isSpeaking = false; ttsBusyUntil = Date.now() + delay;
     setTimeout(function () { if (!isSpeaking) muteMic(false); }, delay + 60);   // səs bitdi: yalnız indi dinləməyə keç
-    if (convo) activeUntil = Date.now() + 15000;
+    if (convo) activeUntil = Date.now() + AWAKE_MS;
     if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
   }
   function logChat(who, text) { chatLog.push(who + ': ' + String(text).slice(0, 120)); if (chatLog.length > 4) chatLog.shift(); }
@@ -912,6 +912,11 @@
     goodModel = ''; gttsModel = ''; try { localStorage.removeItem('gemini_model'); localStorage.removeItem('gtts_model'); } catch (e) {}
     limUpdate(); micUpdate(); if (voiceOn) updateVoiceBtn('idle');
   }
+  setInterval(function () {
+    var b = $('wakeBadge'); if (!b) return; var left = activeUntil - Date.now(), working = acting || !!mission || busy > 0;
+    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + (robotName || 'Ziko') + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + (robotName || 'Ziko') + '» deyin';
+    b.style.color = left > 0 ? 'var(--ok)' : working ? 'var(--warn)' : 'var(--muted)';
+  }, 500);
   setInterval(limUpdate, 1000);
   $('limReset').addEventListener('click', function () { quotaUntil = 0; minuteHits = []; dayRec = { day: pacificDay(), n: 0 }; sset('api_day', JSON.stringify(dayRec)); sset('quota_until', 0); limitSpoken = false; limUpdate(); micUpdate(); note('Limit sayğacı sıfırlandı'); });
 
@@ -1686,7 +1691,9 @@
   // =====================================================================
   //  SƏS: Gemini ilə dinləmə + çağırış (wake word) + marşrutlaşdırma
   // =====================================================================
-  var voiceOn = false, activeUntil = 0, convo = false;
+  var voiceOn = false, activeUntil = 0, convo = false, AWAKE_MS = 10000;      // AWAKE_MS: yalnız "Ziko" tək deyiləndə əmr gözləmə müddəti
+  var STOP_NEEDS_NAME = false;                                                    // true etsəniz "dayan" da adsız işləməz (təhlükəsizlik üçün false saxlanıb)
+  function goSleep() { activeUntil = 0; convo = false; }                          // əmr qəbul edildi: robot yuxuya keçir, növbəti əmr üçün yenidən ad çəkilməlidir
   function updateVoiceBtn(state) {
     voiceBtn.classList.toggle('on', voiceOn);
     voiceBtn.classList.toggle('talk', voiceOn && state === 'talk');
@@ -1756,11 +1763,11 @@
     return 'TASK:ROUTER\nYou are the voice router of a small wheeled robot named "' + robotName + '". The audio contains ONE spoken utterance (Azerbaijani, sometimes Turkish or Russian). ' +
       'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
       (chatLog.length ? 'Recent conversation (for context, newest last):\n' + chatLog.join('\n') + '\n' : '') +
-      'Session active (the user addressed the robot within the last 15 seconds): ' + (active ? 'true' : 'false') + '.\n' +
+      'Session active (the user said ONLY the robot name a few seconds ago and the robot is waiting for one command): ' + (active ? 'true' : 'false') + '.\n' +
       'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","amount":null|number,"unit":null|"deg"|"cm"|"m"|"sec","continuous":false,"name":null|"...","target":null|"...","target_en":null|"...","old":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
       'intent values:\n' +
       '- "stop": stop / dayan / dayandır / saxla.\n' +
-      '- "drive": movement. "drive": irəli/qabağa get = F; geri/arxaya get = B; sola/sola dön = L; sağa/sağa dön = R. Works even without the robot name. ' +
+      '- "drive": movement. "drive": irəli/qabağa get = F; geri/arxaya get = B; sola/sola dön = L; sağa/sağa dön = R. Requires the robot name (or an active session) except for stop. ' +
       'Also fill "amount" (number) and "unit" when the user gives a size: "deg" for turns ("sağa 45 dərəcə dön" -> R, 45, deg), "cm" or "m" for distance ("irəli 10 sm get" -> F, 10, cm; "irəli 1 metr get" -> F, 1, m), "sec" for seconds. ' +
       '"geriyə dön" / "arxaya dön" / "tərsinə dön" = turn around: drive R, amount 180, unit deg. If no size is given leave amount and unit null. ' +
       'Set "continuous": true ONLY if the user explicitly asks for non-stop movement ("dayanmadan irəli get", "fasiləsiz"), otherwise false.\n' +
@@ -1779,7 +1786,7 @@
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
       '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
       '- "none": noise, silence, or speech not addressed to the robot.\n' +
-      'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop" and "drive", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
+      'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
   }
 
   async function transcribe(wav) {
@@ -1810,11 +1817,12 @@
     if (hn.length >= 8 && lastSpokenNorm && lastSpokenNorm.indexOf(hn) >= 0) return;                 // öz səsinin əksi
     if (hn && hn === lastHeardN && Date.now() - lastHeardT < 4000) return;                           // eyni cümlənin təkrarı
     lastHeardN = hn; lastHeardT = Date.now();
-    var intent = r.intent || 'none', needName = !(intent === 'stop' || intent === 'drive');
+    var intent = r.intent || 'none', needName = !(!STOP_NEEDS_NAME && (intent === 'stop' || (intent === 'drive' && r.drive === 'S')));
     if (needName && !(r.called || active)) return;
     if (mission && intent !== 'stop' && !(intent === 'drive' && (r.drive === 'S' || mission.timed))) return;   // tapşırıq gedir (hərəkət əmri istisna)
     if ((acting && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S'))) return;           // başqa əməliyyat gedir
-    if (needName) { activeUntil = Date.now() + 15000; convo = true; }
+    if (intent === 'call') { activeUntil = Date.now() + AWAKE_MS; convo = true; }   // yalnız ad: bir əmr gözləyir
+    else if (intent !== 'none') goSleep();                                           // əmr qəbul edildi: yuxu (icra zamanı adsız əmr qəbul edilmir)
     if (r.heard && intent !== 'none') logChat('İstifadəçi', r.heard);
     release();
     var isStopLike = intent === 'stop' || intent === 'drive';
@@ -2004,7 +2012,11 @@
     for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoiceFull(matches[i]); if (cmd) heard = matches[i]; }
     if (!heard && matches.length) heard = matches[0];
     lastVoice.textContent = heard || '—';
-    if (cmd) doDrive(cmd);
+    var named = matches.some(hasWake);
+    if (named) { activeUntil = Date.now() + AWAKE_MS; convo = true; }
+    if (!cmd) return;                                                                // yalnız "Ziko": bir əmr gözləyir
+    if ((STOP_NEEDS_NAME || cmd.drive !== 'S') && Date.now() >= activeUntil) return; // ad çəkilməyib: əmr qəbul edilmir
+    goSleep(); doDrive(cmd);
   }
   function listenLoop() {
     if (!voiceOn || apiKey) return;
@@ -2124,7 +2136,7 @@
   function localChat(text) {                                                         // yalnız salam / çağırış / "eşidirsən": API-yə getmir
     var toks = norm(text).split(' ').filter(Boolean); if (!toks.length) return null;
     var wake = localWakeSet(), t = toks.filter(function (w) { return !wake[w]; }), hadWake = t.length !== toks.length, j = t.join(' ');
-    if (!j) return hadWake ? 'Bəli, necə kömək edə bilərəm?' : null;
+    if (!j) return hadWake ? 'Bəli, dinləyirəm.' : null;
     if (/^(salam|salam aleykum|aleykum salam|salamlar)$/.test(j)) return 'Salam! Necə kömək edə bilərəm?';
     if (/^((mene|sen) )?(esidirsen|esidirsenmi|esidirsen mi|esidirsiz|esidirsiz mi)$/.test(j)) return 'Bəli, səni eşidirəm.';
     var G = { salam: 1, aleykum: 1, salamlar: 1, mene: 1, sen: 1, esidirsen: 1, esidirsenmi: 1, esidirsiz: 1, mi: 1, alo: 1, hey: 1 };
@@ -2136,21 +2148,33 @@
     var n = norm(text); if (n.length >= 3 && lastSpokenNorm && lastSpokenNorm.indexOf(n) >= 0) return null;   // robotun öz səsinin əksi
     return c;
   }
+  function hasWake(text) {                                                           // "Ziko" (və yaxın səhv eşitmələr: zeko, ziqo, zika ...)
+    var w = localWakeSet(), t = norm(text).split(' '), keys = Object.keys(w), i, j;
+    for (i = 0; i < t.length; i++) {
+      if (w[t[i]]) return true;
+      if (t[i].length >= 4 && t[i].length <= 5) for (j = 0; j < keys.length; j++) if (keys[j].length >= 4 && lev(t[i], keys[j]) <= 1) return true;
+    }
+    return false;
+  }
   function onLocalText(matches) {
     if (!voiceOn || !localOn) return;
     var talking = isSpeaking || Date.now() < ttsBusyUntil;                           // robot danışır: salam/söhbət qəbul edilmir, amma hərəkət əmri keçir
     if (!talking) localSeenAt = Date.now();
+    if (!talking) { for (var wi = 0; wi < matches.length; wi++) if (hasWake(matches[wi])) { activeUntil = Date.now() + AWAKE_MS; convo = false; break; } }   // Ziko çağırıldı: robot ayıldı (bu cümlədəki əmr üçün)
     var cmd = null, heard = '';
-    for (var gi = 0; gi < matches.length && !talking; gi++) {
+    for (var gi = 0; gi < matches.length && !talking && Date.now() < activeUntil; gi++) {
       var gr = localChat(matches[gi]);
       if (gr) {
         localHandledAt = Date.now(); if (Date.now() - lastGreetT < 4000) return; lastGreetT = Date.now();
-        activeUntil = Date.now() + 15000; convo = true; lastVoice.textContent = matches[gi] + ' ⚡'; logChat('İstifadəçi', matches[gi]); apiStats.local++; updateApiInfo();
+        var onlyName = gr === 'Bəli, dinləyirəm.';                                    // yalnız "Ziko": əmr gözlə; "Ziko salam": cavab ver, yuxuya get
+        if (onlyName) { activeUntil = Date.now() + AWAKE_MS; convo = true; } else goSleep();
+        lastVoice.textContent = matches[gi] + ' ⚡'; logChat('İstifadəçi', matches[gi]); apiStats.local++; updateApiInfo();
         speak(gr); return;
       }
     }
     for (var i = 0; i < matches.length && !cmd; i++) { cmd = talking ? strictLocal(matches[i]) : localSimpleCommand(matches[i]); if (cmd) heard = matches[i]; }
     if (!cmd) return;                                                                // sadə əmr deyil: Gemini yolu davam edir
+    if ((STOP_NEEDS_NAME || cmd.drive !== 'S') && Date.now() >= activeUntil) return;  // Ziko çağırılmayıb: əmr qəbul edilmir ("dayan" istisna)
     if (talking) { stopSpeech(); endSpeakState(0); }                                 // danışarkən əmr gəldi: danışmanı kəs, əmri icra et
     localHandledAt = Date.now();                                                     // bu səs Gemini-yə göndərilməyəcək
     var key = norm(heard);
@@ -2160,6 +2184,7 @@
     apiStats.local++; updateApiInfo();
     if (acting && cmd.drive !== 'S') return;                                         // başqa əməliyyat gedir (Gemini yolundakı kimi)
     if (dupDrive(cmd)) return;
+    goSleep();                                                                       // əmr qəbul edildi: robot yuxuya keçir
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); });
   }
   // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
@@ -2168,8 +2193,13 @@
     var began = uttBegan, t0 = Date.now();
     (function waitLocal() {
       if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // yerli əmr işləndi: API sorğusu YOXDUR
-      var lim = (Date.now() - localSeenAt < 30000) ? LOCAL_WAIT_ALIVE_MS : LOCAL_WAIT_MS;   // yerli tanıma son vaxtlar işləyibsə, nəticəni daha çox gözlə
-      if (localSeenAt >= began || Date.now() - t0 >= lim) { handleWav(wav); return; }
+      var awake = Date.now() < activeUntil, alive = Date.now() - localSeenAt < 30000;
+      if (localSeenAt >= began) {                                                     // yerli mətn gəldi
+        if (!awake) { apiStats.skipped++; updateApiInfo(); return; }                  // Ziko çağırılmayıb (başqası danışır): at
+        handleWav(wav); return;
+      }
+      var lim = awake ? 800 : (alive ? 2200 : LOCAL_WAIT_MS);                           // yuxuda: yerli mətni gözlə ki, kimin danışdığı bilinsin
+      if (Date.now() - t0 >= lim) { if (!awake && alive) { apiStats.skipped++; updateApiInfo(); return; } handleWav(wav); return; }
       setTimeout(waitLocal, 25);
     })();
   }
@@ -2225,7 +2255,7 @@
       e.preventDefault(); if (!pttHeld) return;
       pttHeld = false; micUpdate(); pb.textContent = '🗣 Basıb saxla və danış';
       var buf = pttBuf; pttBuf = [];
-      if (buf.length) { activeUntil = Date.now() + 15000; convo = true; handleUtterance(buf); }
+      if (buf.length) { activeUntil = Date.now() + AWAKE_MS; convo = true; handleUtterance(buf); }
     }
     pb.addEventListener('pointerdown', down); pb.addEventListener('pointerup', up); pb.addEventListener('pointercancel', up); pb.addEventListener('pointerleave', up);
   })();
@@ -2266,11 +2296,11 @@
     handleUtterance: function () { handleUtterance([new Float32Array(16000)]); },
     drive: function (r) { return doDrive(r); }, gyroState: function () { return { gt: gt && { cum: gt.cum, cumO: gt.cumO, cumR: gt.cumR, done: gt.done }, inv: turnInvert, last: gy.lastRes }; },
     setBT: function (b) { BT = b; }, setConn: function (a) { devAddr = a; setConnected(true, 'T'); }, setVisionGap: function (g) { visionGap = g; },
-    setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + 15000; },
+    setTiming: function (t, f) { turnMs = t; fwdMs = f; }, setActive: function () { activeUntil = Date.now() + AWAKE_MS; },
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v35 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v36 ✓';
 })();
 </script>
 </body>
