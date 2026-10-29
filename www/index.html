@@ -114,6 +114,8 @@
     <div class="row"><button id="gyZero" style="flex:0 0 96px">⟲ Sıfırla</button>
       <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="gyInv"> Dönmə istiqaməti tərsdir (robot "sağa" deyəndə sola dönürsə)</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="straightOn"> 🧭 İrəli/geri düz getsin (giroskopla istiqaməti saxla)</label>
+    <div class="hint" id="straightInfo">Düz getmə: gözləyir</div>
     <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
@@ -186,7 +188,7 @@
 
   <div class="card" id="driveSpeedPanel">
     <div class="sl"><label>🚗 Hərəkət sürəti (irəli/geri): <b id="spdVal">100%</b></label><input type="range" id="motorSpeed" min="40" max="100" step="10"></div>
-    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v10.ino lazımdır.</div>
+    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v13.ino lazımdır.</div>
   </div>
   <div class="card">
     <div class="camrow">
@@ -447,6 +449,7 @@
   var TURN_CMDS = 'LRQE', MOVE_CMDS = 'FBLRQE', armSentAt = 0;
   function send(c) {
     var cs = String(c).replace(/\n/g, ''); lastCmd.textContent = (NAMES[c] || 'Sürət') + ' (' + cs + ')';
+    holdHook(c);                                                                      // irəli/geri: giroskopla düz getmə
     if (!connected || !BT) { $('simLine').textContent = 'Bluetooth qoşulmayıb, simulyasiya rejimində işləyir'; try { console.log('[SİM] komanda: ' + cs); } catch (e) {} return; }
     if (typeof c === 'string' && c.length === 1 && MOVE_CMDS.indexOf(c) >= 0 && Date.now() - armSentAt > 1500) {   // Arduino silahsızlanıbsa (watchdog) hərəkətdən əvvəl 'A' ilə silahlandır
       armSentAt = Date.now(); BT.write(devAddr, SPP, 'A', function () {}, function () {});
@@ -457,6 +460,57 @@
     }
     BT.write(devAddr, SPP, c, function () {}, function () { warn('Robota göndərmə xətası. Bluetooth bağlantısını yoxlayın.'); });
   }
+
+  // ---------- DÜZ GETMƏ: irəli/geri zamanı giroskopla istiqaməti saxla ----------
+  // Başlanğıcda robotun baxdığı bucaq yadda saxlanır. Robot sağa/sola sapanda JS 60 ms-dən bir Arduino-ya 'T<0-200>\n' (trim = dəyər-100, %) göndərir:
+  // + = sağa (saat əqrəbi) düzəliş, - = sola. Arduino lazım olan tərəfin motorunu yavaşladır. Motorların fərqi (biri güclü, biri zəif) "bias" kimi öyrənilib yadda qalır.
+  var straightOn = sget('straight_on', '1') === '1', STR_KP = 4, STR_KI = 2;
+  var strBias = {}; try { strBias = JSON.parse(sget('str_bias', '{}')) || {}; } catch (e) { strBias = {}; }
+  var hdgHold = { on: false, dead: false, dirty: false, cmd: '', target: 0, axis: 'y', bias: 0, sent: null, sentAt: 0, last: 0, t0: 0, lastSend: 0, tmr: null };
+  function rawW(t) { try { if (connected && BT && devAddr) BT.write(devAddr, SPP, t, function () {}, function () {}); } catch (e) {} }
+  function trimWrite(tr, force) {
+    var v = Math.round(tr * (turnInvert ? -1 : 1)), n = Date.now();
+    if (!force && hdgHold.sent !== null && Math.abs(v - hdgHold.sent) < 2 && n - hdgHold.sentAt < 500) return;
+    hdgHold.sent = v; hdgHold.sentAt = n; hdgHold.dirty = v !== 0; rawW('T' + (v + 100) + '\n');
+  }
+  function holdInfo(t) { var e = $('straightInfo'); if (e) e.textContent = t; }
+  function holdEnd(c) {
+    if (hdgHold.on) {
+      clearInterval(hdgHold.tmr); hdgHold.on = false;
+      if (!hdgHold.dead && Date.now() - hdgHold.t0 > 1500) { strBias[hdgHold.cmd] = Math.round(hdgHold.bias * 10) / 10; sset('str_bias', JSON.stringify(strBias)); }
+      holdInfo('Düz getmə: gözləyir (öyrənilmiş fərq F ' + (strBias.F || 0) + '%, B ' + (strBias.B || 0) + '%)');
+    }
+    if (c === 'S') { hdgHold.dirty = false; hdgHold.sent = null; }
+    else if (hdgHold.dirty) { trimWrite(0, true); }
+  }
+  function holdKeep(c) {
+    var now = Date.now();
+    if (hdgHold.on && hdgHold.cmd === c) { hdgHold.lastSend = now; return; }
+    if (hdgHold.on) holdEnd('X');
+    if (!straightOn || !gyroReady()) { if (hdgHold.dirty) trimWrite(0, true); holdInfo(straightOn ? 'Düz getmə: giroskop hazır deyil, düzəliş yoxdur' : 'Düz getmə söndürülüb'); return; }
+    var ax = gy.curAxis, h = axisHeading(gy.alpha, gy.beta, gy.gamma, ax).h;
+    hdgHold.on = true; hdgHold.dead = false; hdgHold.cmd = c; hdgHold.axis = ax; hdgHold.target = h;
+    hdgHold.bias = strBias[c] || 0; hdgHold.sent = null; hdgHold.last = now; hdgHold.t0 = now; hdgHold.lastSend = now;
+    trimWrite(hdgHold.bias, true);
+    clearInterval(hdgHold.tmr); hdgHold.tmr = setInterval(holdTick, 60);
+  }
+  function holdTick() {
+    var H = hdgHold, now = Date.now(); if (!H.on || H.dead) return;
+    if (now - H.lastSend > 900) { holdEnd('S'); return; }
+    if (!(gy.alpha !== null && now - gy.lastAt < 500)) { trimWrite(0); holdInfo('Düz getmə: giroskop məlumatı gəlmir, düzəliş yoxdur'); return; }
+    var dt = Math.min(0.2, (now - H.last) / 1000); H.last = now;
+    var err = angleDiff(axisHeading(gy.alpha, gy.beta, gy.gamma, H.axis).h, H.target);
+    if (Math.abs(err) > 35) { H.dead = true; trimWrite(0, true); holdInfo('Düz getmə dayandı: bucaq çox sapdı'); warn('Düz getmə söndürüldü: bucaq 35°-dən çox sapdı. Telefonun robota bərk bərkidildiyini və oxu yoxlayın.', true); return; }
+    if (Math.abs(err) > 1) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));
+    var tr = Math.max(-70, Math.min(70, H.bias - STR_KP * err));
+    trimWrite(tr);
+    holdInfo('Düz getmə: hədəf ' + f1(H.target) + '° · sapma ' + (err > 0 ? '+' : '') + f1(err) + '° · düzəliş ' + Math.round(tr * (turnInvert ? -1 : 1)) + '%');
+  }
+  function holdHook(c) {
+    if (typeof c !== 'string' || c.length !== 1) return;
+    if (c === 'F' || c === 'B') holdKeep(c); else if ('SLRQE'.indexOf(c) >= 0) holdEnd(c);
+  }
+  window.addEventListener('pagehide', function () { clearInterval(hdgHold.tmr); });
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
   document.querySelectorAll('.pad button').forEach(function (btn) {
@@ -1089,7 +1143,7 @@
     if (!gt) return;
     gt.cum = gt.rateOk ? Math.max(gt.cumO, gt.cumR) : gt.cumO;                // iki müstəqil ölçmədən hansı irəlidədirsə, ona görə dayan (ötmə riskinə qarşı)
     if (gt.done) {
-      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v10.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
+      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v13.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
       return;
     }
     if (gt.rateOk && !gt.rateChecked && gt.cumO >= 15) { gt.rateChecked = true; if (gt.cumR > gt.cumO * 1.6) gt.rateOk = false; }   // sürət sensoru anormal böyük göstərirsə, ona etibar etmə
@@ -1140,6 +1194,8 @@
   $('gyZero').addEventListener('click', function () { gy.zero = gy.heading; gy.lastRes = ''; renderGyro(true); });
   $('gyMode').addEventListener('change', function () { gyroMode = this.value; sset('gyro_mode', gyroMode); });
   $('gyInv').checked = turnInvert;
+  $('straightOn').checked = straightOn;
+  $('straightOn').addEventListener('change', function () { straightOn = this.checked; sset('straight_on', straightOn ? '1' : '0'); if (!straightOn && hdgHold.on) holdEnd('X'); });
   $('gyInv').addEventListener('change', function () { turnInvert = this.checked; sset('turn_invert', turnInvert ? '1' : '0'); });
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
