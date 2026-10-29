@@ -98,6 +98,25 @@
     <div class="limtxt" id="limTxt">Gemini limiti: 0%</div>
   </div>
 
+  <div class="card" id="gyroPanel">
+    <b style="font-size:13px">🧭 Giroskop monitoru</b>
+    <div class="row"><button id="gyBtn" class="primary" style="flex:1">🧭 Giroskopu aktivləşdir (icazə ver)</button></div>
+    <div class="gtop">
+      <div class="gdial"><u></u><b id="gyTgt"></b><i id="gyNeedle"></i></div>
+      <div class="gtxt"><span id="gyState">Giroskop aktiv deyil</span><br>Dönmə: <b id="gyTurn">—</b></div>
+    </div>
+    <div class="gprog"><i id="gyProg"></i></div>
+    <div class="hint" id="gyPlan">Dönmə yoxdur: başlanğıc α → hədəf α burada görünəcək</div>
+    <div class="gy">
+      <div>α (alpha)<b id="gyA">—</b></div><div>β (beta)<b id="gyB">—</b></div><div>γ (gamma)<b id="gyG">—</b></div>
+      <div>İstiqamət<b id="gyH">—</b></div><div>Sıfırdan fərq<b id="gyD">—</b></div><div>Ox / tezlik<b id="gyX">—</b></div>
+    </div>
+    <div class="row"><button id="gyZero" style="flex:0 0 96px">⟲ Sıfırla</button>
+      <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="gyInv"> Dönmə istiqaməti tərsdir (robot "sağa" deyəndə sola dönürsə)</label>
+    <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
+  </div>
+
   <div class="live" id="liveBox">
     <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
     <div class="lvrow"><span class="lvlab">🎧 Robot səni belə başa düşdü</span><div id="lastVoice">—</div></div>
@@ -163,25 +182,6 @@
     <div class="row"><button id="turnTest" style="flex:1">▶ Dönmə sürətini sına (1.5 san)</button><button id="pwmTest" style="flex:1">🔧 PWM testi (Arduino)</button></div>
     <div id="btEcho" class="hint">Arduino cavabı: —</div>
     <div class="hint">Dönmə rejimi (Spin / Pivot) bütün dönmələrə (düymələr, səs, giroskop) tətbiq olunur. Bu sürət ◀ ▶ düymələrinə və giroskoplu dönməyə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. Giroskop aktiv deyilsə, səsli dönmə vaxtla və adi sürətlə gedir. 0% = motor sönür (PWM 0), 100% = tam güc (PWM 255). İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
-  </div>
-
-  <div class="card" id="gyroPanel">
-    <b style="font-size:13px">🧭 Giroskop monitoru</b>
-    <div class="row"><button id="gyBtn" class="primary" style="flex:1">🧭 Giroskopu aktivləşdir (icazə ver)</button></div>
-    <div class="gtop">
-      <div class="gdial"><u></u><b id="gyTgt"></b><i id="gyNeedle"></i></div>
-      <div class="gtxt"><span id="gyState">Giroskop aktiv deyil</span><br>Dönmə: <b id="gyTurn">—</b></div>
-    </div>
-    <div class="gprog"><i id="gyProg"></i></div>
-    <div class="hint" id="gyPlan">Dönmə yoxdur: başlanğıc α → hədəf α burada görünəcək</div>
-    <div class="gy">
-      <div>α (alpha)<b id="gyA">—</b></div><div>β (beta)<b id="gyB">—</b></div><div>γ (gamma)<b id="gyG">—</b></div>
-      <div>İstiqamət<b id="gyH">—</b></div><div>Sıfırdan fərq<b id="gyD">—</b></div><div>Ox / tezlik<b id="gyX">—</b></div>
-    </div>
-    <div class="row"><button id="gyZero" style="flex:0 0 96px">⟲ Sıfırla</button>
-      <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="gyInv"> Dönmə istiqaməti tərsdir (robot "sağa" deyəndə sola dönürsə)</label>
-    <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
   <div class="card" id="driveSpeedPanel">
