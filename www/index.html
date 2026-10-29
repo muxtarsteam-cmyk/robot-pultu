@@ -230,7 +230,7 @@
     <div class="row"><label for="ttsLang">Danışıq dili</label>
       <select id="ttsLang"><option value="auto">Avtomatik</option><option value="az-AZ">az-AZ</option><option value="tr-TR">tr-TR</option><option value="ru-RU">ru-RU</option><option value="en-US">en-US</option></select></div>
     <div class="row"><label for="ttsEngine">Səs mühərriki</label>
-      <select id="ttsEngine"><option value="auto">Avtomatik: Gemini səsi → Google → telefon</option><option value="save">Qənaət: Gemini səsi yalnız uzun cavabda</option><option value="google">Google internet səsi → telefon</option><option value="device">Yalnız telefon səsi</option></select></div>
+      <select id="ttsEngine"><option value="fast">⚡ Sürətli: qısa cavab dərhal telefon səsi, uzun cavab Gemini səsi</option><option value="auto">Avtomatik: Gemini səsi → Google → telefon</option><option value="save">Qənaət: Gemini səsi yalnız uzun cavabda</option><option value="google">Google internet səsi → telefon</option><option value="device">Yalnız telefon səsi</option></select></div>
     <div class="row"><label for="ttsVoice">Gemini səsi</label>
       <select id="ttsVoice"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
     <div class="row"><button id="setSave" class="primary" style="flex:1">Ayarları saxla</button></div>
@@ -273,7 +273,8 @@
   var robotName = sget('robot_name', 'Ziko');
   var turnMs = 400, fwdMs = 700, circleSteps = 8;      // recalc() ilə kalibrləmədən hesablanır
   var searchDeg = +sget('search_deg', 45), motorSpeed = +sget('motor_speed', 100), calSpeed = +sget('cal_speed', 100), plainFwd = sget('plain_fwd', 'inf'), thinkOk = sget('think_ok', '1');
-  var turn90Ms = +sget('turn90_ms', 700), cmPerSec = +sget('cm_per_sec', 20), defCm = +sget('def_cm', 50), rpmLimit = +sget('rpm_limit', 10), rpdLimit = +sget('rpd_limit', 250), apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'auto'), ttsVoiceName = sget('tts_voice', 'Kore');
+  var turn90Ms = +sget('turn90_ms', 700), cmPerSec = +sget('cm_per_sec', 20), defCm = +sget('def_cm', 50), rpmLimit = +sget('rpm_limit', 10), rpdLimit = +sget('rpd_limit', 250), apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'fast'), ttsVoiceName = sget('tts_voice', 'Kore');
+  if (sget('tts_fast_mig', '0') !== '1') { if (ttsEngine === 'auto') ttsEngine = 'fast'; sset('tts_engine', ttsEngine); sset('tts_fast_mig', '1'); }   // bir dəfə: sürətli rejimə keç
   var people = [];
   try { people = JSON.parse(sget('people', '[]')) || []; } catch (e) { people = []; }
   var things = [];
@@ -824,8 +825,9 @@
     if (voiceOn) updateVoiceBtn('say');
     try {
       var played = false, clean = normalizeSpeech(text, false), online = navigator.onLine !== false;
-      if (clean && ttsEngine !== 'device' && online) {
-        if ((ttsEngine === 'auto' || (ttsEngine === 'save' && clean.length > 90)) && apiKey && Date.now() >= gttsPause) played = await playGemini(ttsChunks(clean), token);
+      var quick = ttsEngine === 'fast' && clean.length <= 220;                      // qısa cavab: Gemini/Google səsini gözləmə
+      if (clean && ttsEngine !== 'device' && !quick && online) {
+        if ((ttsEngine === 'auto' || ttsEngine === 'fast' || (ttsEngine === 'save' && clean.length > 90)) && apiKey && Date.now() >= gttsPause) played = await playGemini(ttsChunks(clean), token);
         if (!played && token === speakToken && onlineFails < 3) played = await playOnline(splitChunks(clean, 180), token);
       }
       if (!played && token === speakToken) {
@@ -1821,7 +1823,7 @@
     try {
     switch (intent) {
       case 'stop': abortMission(); send('S'); note(''); break;
-      case 'drive': await doDrive(r); break;
+      case 'drive': if (!dupDrive(r)) await doDrive(r); break;
       case 'call': await speak('Bəli, necə kömək edə bilərəm?'); break;
       case 'ask': if (r.answer) await speak(String(r.answer)); break;
       case 'long': await longReply(b64, r.heard); break;
@@ -1843,7 +1845,7 @@
 
   function handleUtterance(chunks) {
     var pcm = downsample(concat(chunks), curRate, 16000);
-    if (pcm.length < 16000 * 0.45) { apiStats.skipped++; updateApiInfo(); return; }                    // çox qısa səs-küy: API-yə göndərmə
+    if (pcm.length < 16000 * 0.3) { apiStats.skipped++; updateApiInfo(); return; }                    // çox qısa səs-küy: API-yə göndərmə
     var e2 = 0, k2; for (k2 = 0; k2 < pcm.length; k2 += 8) e2 += pcm[k2] * pcm[k2]; if (Math.sqrt(e2 / (pcm.length / 8)) < 0.012) { apiStats.skipped++; updateApiInfo(); return; }   // demək olar ki, səssiz
     if (pcm.length > 16000 * 60) pcm = pcm.subarray(0, 16000 * 60);                // çox qısa səs-küy
     var wav = toWav(pcm, 16000);
@@ -1890,7 +1892,7 @@
       // danışıq zamanı həssaslıq artır (cümlənin sonundakı yumşaq hecalar susma sayılmasın)
       if (rms > thr * 0.6) silenceMs = 0; else silenceMs += ms;
       // uzun cümlə: fasilələrdə kəsmir; yalnız uzun susmadan sonra (ayarlanan müddət) bitir; maksimum 40 saniyə
-      var hang = speechMs < 1200 ? Math.min(pauseMs, 700) : speechMs < 2500 ? Math.min(pauseMs, 1100) : pauseMs;     // qısa əmrlər tez bitir, uzun cümlələr kəsilmir
+      var hang = speechMs < 1500 ? Math.min(pauseMs, 450) : speechMs < 3500 ? Math.min(pauseMs, 800) : pauseMs;     // qısa əmrlər tez bitir, uzun cümlələr kəsilmir
       if (silenceMs > hang || speechMs > 40000) {
         speaking = false;
         var s = speech; speech = []; silenceMs = 0;
@@ -1903,6 +1905,11 @@
   function micPermission(cb) { permAsync(PERM_MIC).then(cb); }
 
   // ---- Mikrofon: WebView getUserMedia (MODIFY_AUDIO_SETTINGS icazəsi ilə) ----
+  var warmT = null;
+  function warmApi() {                                                               // yüngül sorğu: bağlantı açıq qalır, ilk əsl sorğu gecikmir (generateContent limitinə sayılmır)
+    if (!apiKey || !voiceOn || isRateLimited || navigator.onLine === false) return;
+    try { fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=' + encodeURIComponent(apiKey), { method: 'GET' }).catch(function () {}); } catch (e) {}
+  }
   function startGemini() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { warn('Mikrofon bu mühitdə dəstəklənmir'); return; }
     micPermission(function (ok) {
@@ -1927,7 +1934,7 @@
         proc.onaudioprocess = onAudio;
         srcNode.connect(proc); proc.connect(ctx.destination);
         preRoll = []; speech = []; speaking = false; noise = 0.008;
-        voiceOn = true; updateVoiceBtn('idle'); micUpdate(); note(''); setTimeout(prewarmTTS, 1500); setTimeout(startLocal, 600);
+        voiceOn = true; updateVoiceBtn('idle'); micUpdate(); note(''); setTimeout(prewarmTTS, 1500); setTimeout(startLocal, 600); warmApi(); clearInterval(warmT); warmT = setInterval(warmApi, 40000);
       }).catch(function (e) {
         warn('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. İcazələri yoxlayın.');
       });
@@ -2024,7 +2031,7 @@
   //  Mürəkkəb / qeyri-standart cümlələr əvvəlki kimi Gemini-yə gedir.
   // =====================================================================
   var localOn = false, localRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
-  var LOCAL_WAIT_MS = 1800, LOCAL_WAIT_ALIVE_MS = 2600;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
+  var LOCAL_WAIT_MS = 700, LOCAL_WAIT_ALIVE_MS = 1100;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
   var localSetting = sget('local_cmd', '1') === '1';
   $('localCmd').checked = localSetting;
   // ===== YERLİ ƏMR FİLTRİ (Local Keyword Guard) =====
@@ -2038,9 +2045,24 @@
             .replace(/\b(qabaqa|qabaga)\b/g, 'qabaga')
             .replace(/\b(dondur|donun|donus|donub)\b/g, 'don');
   }
+  var GUARD_KW = ['dayan', 'dayandir', 'stop', 'sakit', 'geri', 'geriye', 'arxaya', 'ireli', 'qabaga', 'saga', 'sola'];
+  function lev(a, b) {
+    var m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9;
+    var pr = [], i, j; for (j = 0; j <= n; j++) pr[j] = j;
+    for (i = 1; i <= m; i++) { var prev = pr[0]; pr[0] = i; for (j = 1; j <= n; j++) { var t = pr[j]; pr[j] = Math.min(pr[j] + 1, pr[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
+    return pr[n];
+  }
+  function guardFuzzy(w) {                                                           // "dayin", "irelli", "geriyye" kimi səhv eşitmələri düzəlt (qısa sözlərə toxunmur)
+    if (w.length < 4 || GUARD_KW.indexOf(w) >= 0) return w;
+    var best = null, bd = 9, lim = w.length >= 7 ? 2 : 1;
+    for (var i = 0; i < GUARD_KW.length; i++) { var d = lev(w, GUARD_KW[i]); if (d <= lim && d < bd) { bd = d; best = GUARD_KW[i]; } }
+    return best || w;
+  }
   function localKeywordGuard(text) {
     var n = norm(text); if (!n) return null;
+    if (/\bsag ?ol/.test(n) || /\b(tesekkur|salam|sagolun)\b/.test(n)) return null;   // "sağ ol" = təşəkkür, sağa dön deyil
     n = guardCanon(n);
+    n = n.split(' ').map(guardFuzzy).join(' ');
     var words = n.split(' ').filter(Boolean);
     if (!words.length || words.length > GUARD_MAX_WORDS) return null;
     if (GUARD_CHAT.test(n)) return null;                                             // söhbət / sual: Gemini
@@ -2091,6 +2113,13 @@
   }
   // 1) dəqiq baza axtarışı -> 2) (hələ yerli) dərəcə/sm/yazılış variantları -> tapılmasa null => yalnız onda Gemini
   function localSimpleCommand(text) { return dbLookup(text) || localKeywordGuard(text); }
+  var lastDriveSig = '', lastDriveT = 0;
+  function dupDrive(c) {                                                             // eyni hərəkət əmri 3 san ərzində iki yolla gəlsə, ikincisini at ("dayan" həmişə keçir)
+    if (!c || c.drive === 'S') return false;
+    var sig = [c.drive, c.amount || '', c.unit || ''].join(':'), n = Date.now();
+    if (sig === lastDriveSig && n - lastDriveT < 3000) return true;
+    lastDriveSig = sig; lastDriveT = n; return false;
+  }
   function onLocalText(matches) {
     if (!voiceOn || !localOn) return;
     if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
@@ -2105,6 +2134,7 @@
     lastVoice.textContent = heard + ' ⚡'; logChat('İstifadəçi', heard);
     apiStats.local++; updateApiInfo();
     if (acting && cmd.drive !== 'S') return;                                         // başqa əməliyyat gedir (Gemini yolundakı kimi)
+    if (dupDrive(cmd)) return;
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); });
   }
   // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
@@ -2115,7 +2145,7 @@
       if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // yerli əmr işləndi: API sorğusu YOXDUR
       var lim = (Date.now() - localSeenAt < 30000) ? LOCAL_WAIT_ALIVE_MS : LOCAL_WAIT_MS;   // yerli tanıma son vaxtlar işləyibsə, nəticəni daha çox gözlə
       if (localSeenAt >= began || Date.now() - t0 >= lim) { handleWav(wav); return; }
-      setTimeout(waitLocal, 80);
+      setTimeout(waitLocal, 25);
     })();
   }
   function localLoop() {
@@ -2124,7 +2154,7 @@
     if (!sr) { localOn = false; return; }
     try {
       sr.startListening(function (matches) {
-        localErr = 0; try { onLocalText(matches || []); } catch (e) {} setTimeout(localLoop, 150);
+        localErr = 0; try { onLocalText(matches || []); } catch (e) {} setTimeout(localLoop, 30);
       }, function () {
         localErr++;
         if (localErr >= 8) { localOn = false; note('Yerli əmr tanıma işləmir (mikrofon toqquşması ola bilər). Əmrlər Gemini ilə işlənir.'); return; }
