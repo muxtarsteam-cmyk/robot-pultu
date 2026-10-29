@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob: gap:;">
+<title>Robot Pultu</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--acc:#3b82f6;--ok:#22c55e;--bad:#ef4444;--warn:#f59e0b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif}
+.app{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:8px;padding:10px 12px 20px}
+h1{font-size:17px;margin:0;text-align:center}
+.card{background:var(--card);border-radius:14px;padding:10px}
+button{font:inherit;color:var(--text);border:0;border-radius:10px;background:#334155;padding:9px;font-size:14px}
+button.p{background:var(--acc)} button.sel{background:var(--acc);font-weight:700} button.on{background:var(--ok)}
+.row{display:flex;gap:6px;margin-top:6px;align-items:center}
+.row>*{flex:1;min-width:0}
+input,select{border:0;border-radius:8px;padding:8px;background:#0f172a;color:var(--text);font-size:14px;user-select:text;-webkit-user-select:text}
+input[type=range]{padding:0} input[type=checkbox]{flex:0 0 auto}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
+.st{display:flex;justify-content:space-between;align-items:center;font-size:14px}.st button{flex:0 0 auto}
+.lab{font-size:11px;color:var(--muted);margin-top:6px}
+#heard{font-size:20px;font-weight:700;min-height:26px;word-break:break-word}
+#status{font-size:15px;min-height:20px;color:var(--ok)}#status.bad{color:var(--warn)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,52px);gap:6px;max-width:270px;margin:0 auto;width:100%}
+.pad button{font-size:12px;font-weight:600;padding:2px}.pad button.act{background:var(--acc)}
+#bF{grid-area:1/2}#bL{grid-area:2/1}#bS{grid-area:2/2;background:#dc2626}#bR{grid-area:2/3}#bB{grid-area:3/2}
+.hint{font-size:11px;color:var(--muted);margin-top:4px}
+.gy{display:flex;gap:10px;align-items:center;margin-top:8px}
+.gdial{flex:0 0 74px;height:74px;border-radius:50%;border:2px solid #475569;position:relative;background:#0f172a}
+.gdial i,.gdial b{position:absolute;left:calc(50% - 2px);top:6px;width:4px;height:31px;border-radius:2px;transform-origin:50% 100%}
+.gdial i{background:var(--acc)}.gdial b{background:var(--ok);display:none;width:3px}
+.gdial u{position:absolute;left:calc(50% - 3px);top:-1px;width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.gtx{flex:1;font-size:12px;color:var(--muted);line-height:1.6}.gtx b{color:var(--text)}
+#pick{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;padding:20px}
+#pick .box{background:var(--card);border-radius:14px;padding:14px;width:100%;max-width:420px;max-height:80%;overflow:auto}
+#pick button{width:100%;margin-top:8px;text-align:left}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🤖 Robot Pultu <small style="color:var(--muted)">v37 · yerli</small></h1>
+
+  <div class="card">
+    <div class="lab">🎧 Eşidilən söz</div><div id="heard">—</div>
+    <div class="lab">⚙ Status</div><div id="status">Hazır</div>
+    <button id="micBtn" style="width:100%;margin-top:8px">🎤 Səs idarəsi: Söndürülüb</button>
+  </div>
+
+  <div class="card">
+    <div class="st"><span><span class="dot" id="dot"></span><span id="connText">Qoşulmayıb</span></span><button class="p" id="connBtn">Bluetooth-a Qoşul</button></div>
+    <div class="hint">Son komanda: <b id="lastCmd">—</b> <span id="sim" style="color:var(--warn)"></span></div>
+  </div>
+
+  <div class="pad">
+    <button id="bF" data-c="F">▲<br>İrəli</button><button id="bL" data-c="L">◀<br>Sola</button>
+    <button id="bS" data-c="S">■<br>Dayan</button><button id="bR" data-c="R">▶<br>Sağa</button>
+    <button id="bB" data-c="B">▼<br>Geri</button>
+  </div>
+
+  <div class="card">
+    <b style="font-size:14px">🔄 Dönmə rejimi</b>
+    <div class="row"><button id="mSpin">🌀 Spin<br><small>4 təkər, əks istiqamət</small></button><button id="mPivot">📍 Pivot<br><small>tək tərəf işləyir</small></button></div>
+    <div class="row"><span style="flex:0 0 130px;font-size:13px">Dönmə sürəti: <b id="tV">25%</b></span><input type="range" id="tP" min="0" max="100" step="1"></div>
+    <div class="row"><span style="flex:0 0 130px;font-size:13px">İrəli/geri: <b id="dV">100%</b></span><input type="range" id="dP" min="40" max="100" step="10"></div>
+    <label class="row" style="font-size:12px;color:var(--muted)"><input type="checkbox" id="useGyro"> Giroskopla dəqiq dönmə (telefon robotda üfüqi bərkidilib)</label>
+    <div class="gy"><div class="gdial"><u></u><b id="gTgt"></b><i id="gNeedle"></i></div>
+      <div class="gtx"><span id="gState">Giroskop: məlumat gəlmir</span><br>Bucaq: <b id="gAng">—</b><br><span id="gProg">Dönmə yoxdur</span><br><button id="gZero" style="padding:4px 10px;font-size:12px">⟲ Sıfırla</button></div></div>
+    <label class="row" style="font-size:12px;color:var(--muted)"><input type="checkbox" id="inv"> Dönmə istiqaməti tərsdir</label>
+    <div class="row"><span style="flex:0 0 130px;font-size:13px">90° vaxtı (ms)</span><input type="number" id="t90" min="100" max="4000" step="50"></div>
+    <div class="hint">Giroskop yoxdursa və ya söndürülübsə, dönmə "90° vaxtı" ilə gedir.</div>
+  </div>
+
+  <details class="card" open>
+    <summary style="font-size:13px;color:var(--muted)">📚 Yerli komanda bazası</summary>
+    <div class="hint">Yalnız bu bazadakı ifadələr icra olunur. Bazada olmayan söz: "Naməlum əmr". İnternetə heç nə göndərilmir.</div>
+    <div class="row"><input id="dbPhrase" placeholder="Yeni ifadə (məs. sağa bax)" autocomplete="off">
+      <select id="dbAction" style="flex:0 0 125px"><option value="R">Sağa 90°</option><option value="L">Sola 90°</option><option value="BACK_TURN">Geriyə 180°</option><option value="F">İrəli</option><option value="B">Geri</option><option value="S">Dayan</option></select>
+      <button class="p" id="dbAdd" style="flex:0 0 44px">➕</button></div>
+    <div id="dbList"></div>
+  </details>
+</div>
+<div id="pick"><div class="box"><b>Cihaz seçin</b><div id="pickList"></div><button id="pickX" style="text-align:center;background:#475569">Ləğv et</button></div></div>
+
+<script src="cordova.js"></script>
+<script>
+(function () {
+  var $ = function (i) { return document.getElementById(i); };
+  function sget(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var SPP = '00001101-0000-1000-8000-00805F9B34FB', BT = null, connected = false, addr = null;
+  var run = 0, burst = 0, armAt = 0, modeAt = 0, modeSent = null;
+  var pivot = sget('pivot', '0') === '1', turnPct = +sget('tpct', 25), drvPct = +sget('dpct', 100);
+  var t90 = +sget('t90', 700), inv = sget('inv', '0') === '1', useGyro = sget('gyro', '1') === '1';
+  var NAMES = { F: 'İrəli', B: 'Geri', L: 'Sola', R: 'Sağa', S: 'Dayan', Q: 'Sola (yavaş)', E: 'Sağa (yavaş)' };
+  function pwm(p) { return Math.max(0, Math.min(255, Math.round(p * 2.55))); }
+  function pctCmd() { return 'P' + pwm(turnPct) + '\n'; }
+  function drvCmd() { return 'V' + pwm(drvPct) + '\n'; }
+  function status(t, bad) { $('status').textContent = t; $('status').className = bad ? 'bad' : ''; }
+
+  // ---------- Bluetooth ----------
+  function w(c) { try { BT.write(addr, SPP, c, function () {}, function () { status('Robota göndərmə xətası', 1); }); } catch (e) {} }
+  function send(c) {
+    $('lastCmd').textContent = NAMES[c] || c.replace('\n', '');
+    if (!connected || !BT) { $('sim').textContent = '(Bluetooth yoxdur: simulyasiya)'; return; }
+    var n = Date.now(), mv = c.length === 1 && 'FBLRQE'.indexOf(c) >= 0;
+    if (mv && n - armAt > 1500) { armAt = n; w('A'); }                                   // Arduino silahsızdırsa, hərəkətdən əvvəl silahla
+    if (mv && 'LRQE'.indexOf(c) >= 0 && (modeSent !== pivot || n - modeAt > 2000)) { modeSent = pivot; modeAt = n; w(pivot ? 'O' : 'N'); }
+    w(c);
+  }
+  function rawStop() { if (!BT || !addr) return; var a = addr, f = function () { try { BT.write(a, SPP, 'S', function () {}, function () {}); } catch (e) {} }; f(); setTimeout(f, 80); setTimeout(f, 200); }
+  function stopBurst() { var b = ++burst; send('S'); [60, 150, 300, 600].forEach(function (t) { setTimeout(function () { if (b === burst) send('S'); }, t); }); }
+  function stopAll() { run++; stopBurst(); }
+  setInterval(function () { if (connected && BT && addr) w('H'); }, 300);              // heartbeat: Arduino 1 san bayt almasa dayanır
+  function setConn(on, name) {
+    connected = on; $('dot').classList.toggle('on', on);
+    $('connText').textContent = on ? 'Qoşulub' + (name ? ': ' + name : '') : 'Qoşulmayıb';
+    $('connBtn').textContent = on ? 'Ayır' : 'Bluetooth-a Qoşul';
+    if (on) { $('sim').textContent = ''; setTimeout(function () { armAt = Date.now(); w('A'); w(drvCmd()); w(pctCmd()); modeSent = pivot; modeAt = Date.now(); w(pivot ? 'O' : 'N'); }, 800); }
+  }
+  function perms(cb) {
+    var p = window.cordova && cordova.plugins && cordova.plugins.permissions; if (!p) return cb();
+    p.requestPermissions(['android.permission.BLUETOOTH_CONNECT', 'android.permission.BLUETOOTH_SCAN', 'android.permission.ACCESS_FINE_LOCATION', 'android.permission.RECORD_AUDIO'], function () { cb(); }, function () { cb(); });
+  }
+  function conn(d) {
+    status('Qoşulur: ' + (d.name || d.address) + ' ...');
+    BT.connect(d.address, [SPP], function () { addr = d.address; setConn(true, d.name || d.address); status('Hazır'); }, function () {
+      var was = connected; if (was) { rawStop(); run++; }                                // əlaqə qopdu: dərhal S (Arduino timeout-u əlavə qoruma verir)
+      setConn(false); addr = null; status(was ? 'Bluetooth bağlantısı kəsildi' : 'Bluetooth qoşulmadı', 1);
+    });
+  }
+  function pick(list) {
+    var box = $('pickList'); box.innerHTML = '';
+    list.forEach(function (d) { var b = document.createElement('button'); b.textContent = (d.name || 'Adsız') + ' (' + d.address + ')'; b.onclick = function () { $('pick').style.display = 'none'; conn(d); }; box.appendChild(b); });
+    $('pickX').onclick = function () { $('pick').style.display = 'none'; }; $('pick').style.display = 'flex';
+  }
+  function devList() {
+    BT.list(function (d) {
+      if (!d || !d.length) { status('Cütləşmiş cihaz yoxdur. Telefonda HC-05 ilə cütləşin.', 1); return; }
+      var hc = d.filter(function (x) { return /hc-?0[56]/i.test(x.name || ''); });
+      hc.length === 1 ? conn(hc[0]) : pick(d);
+    }, function () { status('Cihaz siyahısı alınmadı', 1); });
+  }
+  $('connBtn').addEventListener('click', function () {
+    if (connected) { stopAll(); rawStop(); var a = addr; setConn(false); addr = null; if (BT && a) setTimeout(function () { try { BT.disconnect(a, SPP, function () {}, function () {}); } catch (e) {} }, 400); return; }
+    if (!BT) { status('Bluetooth plugin tapılmadı (simulyasiya)', 1); return; }
+    perms(function () { BT.isEnabled(devList, function () { BT.enable(devList, function () { status('Bluetooth açılmadı', 1); }); }); });
+  });
+  window.addEventListener('pagehide', rawStop);
+
+  // ---------- Hərəkət ----------
+  async function hold(cmd, ms, id) {
+    var end = Date.now() + ms;
+    try { send(cmd); while (id === run && Date.now() < end) { await sleep(Math.min(300, end - Date.now())); if (id === run && Date.now() < end) send(cmd); } }
+    finally { if (id === run) stopBurst(); }
+  }
+  // Giroskop (alpha): dönmə bucağını ölçür, hədəfə çatan AN S göndərir
+  var gy = { a: null, t: 0 }, gt = null;
+  function adiff(a, b) { var d = (a - b) % 360; if (d > 180) d -= 360; else if (d <= -180) d += 360; return d; }
+  var gz = 0, hd = 0, relNow = 0;                                                       // gz = sıfır nöqtəsi (istiqamət), hd = cari istiqamət
+  function f1(x) { return (Math.round(x * 10) / 10).toFixed(1); }
+  function gRender() {
+    relNow = adiff(hd, gz);
+    $('gNeedle').style.transform = 'rotate(' + relNow + 'deg)';                         // simge dönmə zamanı real vaxtda hərəkət edir
+    $('gAng').textContent = (relNow > 0 ? '+' : '') + f1(relNow) + '°';
+    var t = $('gTgt');
+    if (gt) { t.style.display = 'block'; t.style.transform = 'rotate(' + gt.tgt + 'deg)'; $('gProg').textContent = 'Dönmə: ' + f1(Math.max(0, gt.cum)) + '° / ' + gt.deg + '°'; }
+    else { t.style.display = 'none'; }
+  }
+  window.addEventListener('deviceorientation', function (e) {
+    if (e.alpha == null) return;
+    if (gt && gy.a != null) gt.cum += -adiff(e.alpha, gy.a) * gt.sign;                 // saat əqrəbi = müsbət
+    gy.a = e.alpha; gy.t = Date.now(); hd = (360 - e.alpha) % 360; gRender();
+  });
+  $('gZero').onclick = function () { if (gy.a == null) { status('Giroskop məlumatı gəlmir', 1); return; } gz = hd; gRender(); $('gProg').textContent = 'Sıfırlandı'; };
+  setInterval(function () { var ok = Date.now() - gy.t < 800; $('gState').textContent = ok ? '✅ Giroskop işləyir' : '⚠ Giroskop: məlumat gəlmir'; if (!gt && ok && $('gProg').textContent.indexOf('Dönmə:') === 0) $('gProg').textContent = 'Dönmə yoxdur'; }, 500);
+  function tcmd(dir) { return ((dir === 'R') !== inv) ? 'E' : 'Q'; }
+  async function turn(dir, deg, id) {
+    if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir, robot dönməz');
+    var cmd = tcmd(dir);
+    send(pctCmd());
+    if (useGyro && connected && Date.now() - gy.t < 800) {
+      var sg = dir === 'R' ? 1 : -1, g = gt = { sign: sg, cum: 0, deg: deg, tgt: relNow + sg * deg }, t0 = Date.now(), ls = 0, max = deg * 250 + 6000, err = '';
+      try {
+        send(cmd); ls = Date.now();
+        while (id === run && g.cum < deg - 2) {
+          var n = Date.now();
+          if (n - t0 > max) { err = 'Dönmə vaxtı bitdi, robot dayandırıldı'; break; }
+          if (n - gy.t > 800) { err = 'Giroskop məlumatı kəsildi, robot dayandı'; break; }
+          if (g.cum <= -12) { err = 'Robot əks tərəfə dönür: "tərsdir" xanasını yoxlayın'; break; }
+          if (n - ls >= 120) { send(cmd); ls = n; }
+          await sleep(15);
+        }
+      } finally { gt = null; if (id === run) stopBurst(); }
+      if (err) throw new Error(err);
+      return;
+    }
+    await hold(cmd, Math.max(60, Math.round(deg / 90 * t90)), id);
+  }
+  var ACTS = { R: { c: 'R', deg: 90, t: 'Sağa dön 90°' }, L: { c: 'L', deg: 90, t: 'Sola dön 90°' }, BACK_TURN: { c: 'R', deg: 180, t: 'Geriyə dön 180°' },
+               F: { c: 'F', t: 'İrəli' }, B: { c: 'B', t: 'Geri' }, S: { c: 'S', t: 'Dayan' } };
+  async function exec(name) {
+    var a = ACTS[name]; if (!a) return;
+    if (a.c === 'S') { stopAll(); status('Dayandı'); return; }
+    var id = ++run; burst++; status('▶ ' + a.t);
+    try {
+      if (a.deg) await turn(a.c, a.deg, id);
+      else { send(drvCmd()); await hold(a.c, 120000, id); }                            // irəli/geri: "dayan" deyənə qədər (2 dəq təhlükəsizlik həddi)
+      if (id === run) status('Hazır');
+    } catch (e) { status(e && e.message ? e.message : 'Xəta', 1); }
+  }
+
+  // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
+  document.querySelectorAll('.pad button').forEach(function (btn) {
+    var c = btn.dataset.c, keep = null, cc = c;
+    function down(e) {
+      e.preventDefault(); run++; burst++;
+      if (c === 'S') { stopAll(); status('Dayandı'); return; }
+      btn.classList.add('act');
+      if (c === 'L' || c === 'R') { cc = tcmd(c); send(pctCmd()); } else { cc = c; send(drvCmd()); }
+      send(cc); clearInterval(keep); keep = setInterval(function () { send(cc); }, 300);
+    }
+    function up(e) { e.preventDefault(); clearInterval(keep); if (btn.classList.contains('act')) { btn.classList.remove('act'); stopBurst(); } }
+    btn.addEventListener('pointerdown', down); btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up); btn.addEventListener('pointerleave', up);
+  });
+
+  // ---------- Ayarlar ----------
+  function showMode() { $('mSpin').classList.toggle('sel', !pivot); $('mPivot').classList.toggle('sel', pivot); }
+  function setMode(p) { pivot = p; sset('pivot', p ? '1' : '0'); showMode(); if (connected && BT) { modeSent = p; modeAt = Date.now(); w(p ? 'O' : 'N'); } }
+  $('mSpin').onclick = function () { setMode(false); }; $('mPivot').onclick = function () { setMode(true); }; showMode();
+  $('tP').value = turnPct; $('tV').textContent = turnPct + '%';
+  $('tP').oninput = function () { turnPct = +this.value; $('tV').textContent = turnPct + '%'; sset('tpct', turnPct); if (connected) send(pctCmd()); };
+  $('dP').value = drvPct; $('dV').textContent = drvPct + '%';
+  $('dP').oninput = function () { drvPct = +this.value; $('dV').textContent = drvPct + '%'; sset('dpct', drvPct); if (connected) send(drvCmd()); };
+  $('t90').value = t90; $('t90').onchange = function () { t90 = Math.max(100, +this.value || 700); sset('t90', t90); };
+  $('inv').checked = inv; $('inv').onchange = function () { inv = this.checked; sset('inv', inv ? '1' : '0'); };
+  $('useGyro').checked = useGyro; $('useGyro').onchange = function () { useGyro = this.checked; sset('gyro', useGyro ? '1' : '0'); };
+
+  // =====================================================================
+  //  YERLİ KOMANDA BAZASI (100% yerli, heç bir kənar sorğu yoxdur)
+  // =====================================================================
+  function norm(s) {
+    return String(s || '').toLocaleLowerCase('az').replace(/ə/g, 'e').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ü/g, 'u')
+      .replace(/ğ/g, 'g').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  var LABELS = { R: 'Sağa dön 90°', L: 'Sola dön 90°', BACK_TURN: 'Geriyə dön 180°', F: 'İrəli', B: 'Geri', S: 'Dayan' };
+  var DEFAULTS = {
+    'sağa dön': 'R', 'sağa': 'R', 'sağ': 'R',
+    'sola dön': 'L', 'sola': 'L', 'sol': 'L',
+    'irəli get': 'F', 'irəli': 'F',
+    'geriyə dön': 'BACK_TURN', 'geriyə': 'BACK_TURN', 'arxaya dön': 'BACK_TURN',
+    'geri get': 'B', 'geri': 'B',
+    'dayan': 'S', 'dayandır': 'S', 'stop': 'S'
+  };
+  var userDB = {}; try { userDB = JSON.parse(sget('local_db', '{}')) || {}; } catch (e) { userDB = {}; }
+  var localCommandDatabase = {}, idx = {};
+  function rebuild() {
+    localCommandDatabase = {}; idx = {};
+    [DEFAULTS, userDB].forEach(function (src) { Object.keys(src).forEach(function (k) { if (ACTS[src[k]]) { localCommandDatabase[k] = src[k]; idx[norm(k)] = src[k]; } }); });
+  }
+  var WAKE = { ziko: 1, zeko: 1, ziqo: 1, zigo: 1, siko: 1 };
+  function dbLookup(text) {
+    var full = norm(text); if (!full) return null;
+    if (idx[full]) return idx[full];
+    var t = full.split(' '); while (t.length && WAKE[t[0]]) t.shift(); while (t.length && WAKE[t[t.length - 1]]) t.pop();
+    return idx[t.join(' ')] || null;
+  }
+  function renderDB() {
+    var box = $('dbList'); box.innerHTML = '';
+    function add(ph, act, user) {
+      var d = document.createElement('div'); d.className = 'row'; d.style.marginTop = '3px';
+      var s = document.createElement('span'); s.style.cssText = 'font-size:12px;color:' + (user ? 'var(--text)' : 'var(--muted)'); s.textContent = '“' + ph + '” → ' + LABELS[act] + (user ? '' : ' 🔒'); d.appendChild(s);
+      if (user) { var b = document.createElement('button'); b.textContent = '✕'; b.style.cssText = 'flex:0 0 36px;padding:3px'; b.setAttribute('data-ph', ph); d.appendChild(b); }
+      box.appendChild(d);
+    }
+    Object.keys(userDB).forEach(function (k) { add(k, userDB[k], true); });
+    Object.keys(DEFAULTS).forEach(function (k) { add(k, DEFAULTS[k], false); });
+  }
+  $('dbAdd').onclick = function () {
+    var ph = $('dbPhrase').value.trim(), act = $('dbAction').value; if (!ph) return;
+    userDB[ph] = act; sset('local_db', JSON.stringify(userDB)); rebuild(); renderDB(); $('dbPhrase').value = ''; status('Bazaya əlavə olundu: ' + ph);
+  };
+  $('dbList').onclick = function (e) {
+    var ph = e.target.getAttribute && e.target.getAttribute('data-ph'); if (ph == null) return;
+    delete userDB[ph]; sset('local_db', JSON.stringify(userDB)); rebuild(); renderDB();
+  };
+  rebuild(); renderDB();
+
+  // ---------- Səs tanıma: yalnız Azərbaycan dili (az-AZ) ----------
+  var micOn = false, recognition = null, errs = 0, lastKey = '', lastT = 0;
+  function onSpeech(matches) {
+    if (!micOn) return;
+    var list = []; for (var i = 0; i < matches.length; i++) { var t = String(matches[i] || ''); if (norm(t)) list.push(t); }
+    if (!list.length) return;
+    var transcript = list[0], act = null, hit = '';
+    for (i = 0; i < list.length && !act; i++) { act = dbLookup(list[i]); if (act) hit = list[i]; }
+    if (!act) {                                                                       // təhlükəsizlik: cümlədə "dayan/stop" sözü varsa, hər halda dayan
+      for (i = 0; i < list.length && !act; i++) { var tk = norm(list[i]).split(' '); if (tk.indexOf('dayan') >= 0 || tk.indexOf('dayandir') >= 0 || tk.indexOf('stop') >= 0) { act = 'S'; hit = list[i]; } }
+    }
+    $('heard').textContent = hit || transcript;
+    if (!act) { status('Naməlum əmr', 1); return; }                                   // bazada yoxdur: heç yerə sorğu getmir
+    var key = norm(hit), n = Date.now();
+    if (key === lastKey && n - lastT < 1200) return; lastKey = key; lastT = n;        // eyni cümlənin təkrarı
+    exec(act);
+  }
+  function startMic() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition, pl = window.plugins && window.plugins.speechRecognition;
+    if (SR) {
+      recognition = new SR(); recognition.lang = 'az-AZ'; recognition.continuous = true; recognition.interimResults = false; recognition.maxAlternatives = 5;
+      recognition.onresult = function (e) { var r = e.results[e.results.length - 1], m = []; for (var i = 0; i < r.length; i++) m.push(r[i].transcript); onSpeech(m); };
+      recognition.onend = function () { if (micOn) setTimeout(function () { try { recognition.start(); } catch (e) {} }, 200); };
+      recognition.onerror = function (e) { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { status('Mikrofon icazəsi yoxdur', 1); stopMic(); } };
+      micOn = true; try { recognition.start(); } catch (e) {} micUI(); return;
+    }
+    if (!pl) { status('Səs tanıma tapılmadı', 1); return; }
+    perms(function () {
+      pl.requestPermission(function () {
+        micOn = true; errs = 0; micUI();
+        (function loop() {
+          if (!micOn) return;
+          pl.startListening(function (m) { errs = 0; onSpeech(m || []); setTimeout(loop, 150); },
+            function () { errs++; setTimeout(loop, errs > 2 ? 1500 : 500); },
+            { language: 'az-AZ', matches: 5, showPopup: false, showPartial: false });
+        })();
+      }, function () { status('Mikrofon icazəsi verilməyib', 1); });
+    });
+  }
+  function stopMic() {
+    micOn = false;
+    try { if (recognition) { recognition.onend = null; recognition.stop(); } } catch (e) {} recognition = null;
+    try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {}
+    micUI();
+  }
+  function micUI() { $('micBtn').classList.toggle('on', micOn); $('micBtn').textContent = micOn ? '🎤 Dinləyir (az-AZ) · söndürmək üçün bas' : '🎤 Səs idarəsi: Söndürülüb'; }
+  $('micBtn').onclick = function () { micOn ? stopMic() : startMic(); };
+
+  document.addEventListener('deviceready', function () {
+    BT = window.bluetoothClassicSerial || null;
+    if (!BT) $('sim').textContent = '(Bluetooth yoxdur: simulyasiya)';
+    perms(function () { setTimeout(function () { if (!micOn) startMic(); }, 800); });
+  }, false);
+  document.addEventListener('pause', function () { stopAll(); rawStop(); if (micOn) stopMic(); }, false);
+  micUI();
+})();
+</script>
+</body>
+</html>
