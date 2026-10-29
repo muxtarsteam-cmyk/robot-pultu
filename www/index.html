@@ -80,6 +80,8 @@
   .gdial { flex:0 0 64px; height:64px; border-radius:50%; border:2px solid #475569; position:relative; background:#0f172a; }
   .gdial i { position:absolute; left:calc(50% - 2px); top:5px; width:4px; height:27px; background:var(--accent); border-radius:2px; transform-origin:50% 100%; }
   .gdial u { position:absolute; left:calc(50% - 3px); top:-1px; width:6px; height:6px; border-radius:50%; background:var(--ok); }
+  .gdial s { position:absolute; left:calc(50% - 1px); top:1px; width:2px; height:31px; background:#f59e0b; transform-origin:50% 100%; display:none; text-decoration:none; }
+  .gdial s::before { content:''; position:absolute; top:-3px; left:-3px; width:8px; height:8px; border-radius:50%; background:#f59e0b; }
   .gdial b { position:absolute; left:calc(50% - 1px); top:5px; width:2px; height:27px; background:var(--ok); transform-origin:50% 100%; display:none; }
   .gprog { height:8px; border-radius:4px; background:#334155; margin-top:8px; overflow:hidden; }
   .gprog i { display:block; height:100%; width:0%; background:var(--ok); transition:width .08s linear; }
@@ -102,7 +104,7 @@
     <b style="font-size:13px">🧭 Giroskop monitoru</b>
     <div class="row"><button id="gyBtn" class="primary" style="flex:1">🧭 Giroskopu aktivləşdir (icazə ver)</button></div>
     <div class="gtop">
-      <div class="gdial"><u></u><b id="gyTgt"></b><i id="gyNeedle"></i></div>
+      <div class="gdial"><u></u><b id="gyTgt"></b><s id="gyHold"></s><i id="gyNeedle"></i></div>
       <div class="gtxt"><span id="gyState">Giroskop aktiv deyil</span><br>Dönmə: <b id="gyTurn">—</b></div>
     </div>
     <div class="gprog"><i id="gyProg"></i></div>
@@ -115,7 +117,7 @@
       <select id="gyMode"><option value="auto">Telefon: avtomatik</option><option value="flat">Telefon: üfüqi (düz uzanıb)</option><option value="upright">Telefon: dik (kamera irəli)</option></select></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="gyInv"> Dönmə istiqaməti tərsdir (robot "sağa" deyəndə sola dönürsə)</label>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="straightOn"> 🧭 İrəli/geri düz getsin (giroskopla istiqaməti saxla)</label>
-    <div class="hint" id="straightInfo">Düz getmə: gözləyir</div>
+    <div class="hint" id="straightInfo">Düz getmə: gözləyir (narıncı işarə = robotun saxladığı bucaq)</div>
     <div class="hint">Telefon robotun üstündə bərk bərkidilməlidir. Dönmə seçdiyiniz zəif sürətlə gedir və robot hədəf bucaqda özü dayanır.</div>
   </div>
 
@@ -188,7 +190,7 @@
 
   <div class="card" id="driveSpeedPanel">
     <div class="sl"><label>🚗 Hərəkət sürəti (irəli/geri): <b id="spdVal">100%</b></label><input type="range" id="motorSpeed" min="40" max="100" step="10"></div>
-    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v13.ino lazımdır.</div>
+    <div class="hint">Sürət şkalaları üçün Arduino-da ENA→D9, ENB→D10 (jumperlər çıxarılıb) və robot_4wd_v14.ino lazımdır.</div>
   </div>
   <div class="card">
     <div class="camrow">
@@ -464,14 +466,14 @@
   // ---------- DÜZ GETMƏ: irəli/geri zamanı giroskopla istiqaməti saxla ----------
   // Başlanğıcda robotun baxdığı bucaq yadda saxlanır. Robot sağa/sola sapanda JS 60 ms-dən bir Arduino-ya 'T<0-200>\n' (trim = dəyər-100, %) göndərir:
   // + = sağa (saat əqrəbi) düzəliş, - = sola. Arduino lazım olan tərəfin motorunu yavaşladır. Motorların fərqi (biri güclü, biri zəif) "bias" kimi öyrənilib yadda qalır.
-  var straightOn = sget('straight_on', '1') === '1', STR_KP = 4, STR_KI = 2;
+  var straightOn = sget('straight_on', '1') === '1', STR_KP = 6, STR_KI = 2, STR_KD = 0.5;
   var strBias = {}; try { strBias = JSON.parse(sget('str_bias', '{}')) || {}; } catch (e) { strBias = {}; }
-  var hdgHold = { on: false, dead: false, dirty: false, cmd: '', target: 0, axis: 'y', bias: 0, sent: null, sentAt: 0, last: 0, t0: 0, lastSend: 0, tmr: null };
+  var hdgHold = { mark: null, lastErr: 0, dErr: 0, refErr: 0, refT: 0, on: false, dead: false, dirty: false, cmd: '', target: 0, axis: 'y', bias: 0, sent: null, sentAt: 0, last: 0, t0: 0, lastSend: 0, tmr: null };
   function rawW(t) { try { if (connected && BT && devAddr) BT.write(devAddr, SPP, t, function () {}, function () {}); } catch (e) {} }
   function trimWrite(tr, force) {
-    var v = Math.round(tr * (turnInvert ? -1 : 1)), n = Date.now();
+    var v = Math.max(-120, Math.min(120, Math.round(tr * (turnInvert ? -1 : 1)))), n = Date.now();
     if (!force && hdgHold.sent !== null && Math.abs(v - hdgHold.sent) < 2 && n - hdgHold.sentAt < 500) return;
-    hdgHold.sent = v; hdgHold.sentAt = n; hdgHold.dirty = v !== 0; rawW('T' + (v + 100) + '\n');
+    hdgHold.sent = v; hdgHold.sentAt = n; hdgHold.dirty = v !== 0; rawW('T' + (v + 128) + '\n');
   }
   function holdInfo(t) { var e = $('straightInfo'); if (e) e.textContent = t; }
   function holdEnd(c) {
@@ -489,7 +491,7 @@
     if (hdgHold.on) holdEnd('X');
     if (!straightOn || !gyroReady()) { if (hdgHold.dirty) trimWrite(0, true); holdInfo(straightOn ? 'Düz getmə: giroskop hazır deyil, düzəliş yoxdur' : 'Düz getmə söndürülüb'); return; }
     var ax = gy.curAxis, h = axisHeading(gy.alpha, gy.beta, gy.gamma, ax).h;
-    hdgHold.on = true; hdgHold.dead = false; hdgHold.cmd = c; hdgHold.axis = ax; hdgHold.target = h;
+    hdgHold.on = true; hdgHold.dead = false; hdgHold.cmd = c; hdgHold.axis = ax; hdgHold.target = h; hdgHold.mark = h; hdgHold.lastErr = 0; hdgHold.dErr = 0; hdgHold.refT = 0;
     hdgHold.bias = strBias[c] || 0; hdgHold.sent = null; hdgHold.last = now; hdgHold.t0 = now; hdgHold.lastSend = now;
     trimWrite(hdgHold.bias, true);
     clearInterval(hdgHold.tmr); hdgHold.tmr = setInterval(holdTick, 60);
@@ -499,10 +501,17 @@
     if (now - H.lastSend > 900) { holdEnd('S'); return; }
     if (!(gy.alpha !== null && now - gy.lastAt < 500)) { trimWrite(0); holdInfo('Düz getmə: giroskop məlumatı gəlmir, düzəliş yoxdur'); return; }
     var dt = Math.min(0.2, (now - H.last) / 1000); H.last = now;
-    var err = angleDiff(axisHeading(gy.alpha, gy.beta, gy.gamma, H.axis).h, H.target);
-    if (Math.abs(err) > 35) { H.dead = true; trimWrite(0, true); holdInfo('Düz getmə dayandı: bucaq çox sapdı'); warn('Düz getmə söndürüldü: bucaq 35°-dən çox sapdı. Telefonun robota bərk bərkidildiyini və oxu yoxlayın.', true); return; }
-    if (Math.abs(err) > 1) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));
-    var tr = Math.max(-70, Math.min(70, H.bias - STR_KP * err));
+    var err = angleDiff(axisHeading(gy.alpha, gy.beta, gy.gamma, H.axis).h, H.target);   // + = hədəfdən sağa sapıb (əllə itələnəndə də)
+    H.dErr = 0.6 * H.dErr + 0.4 * (dt > 0 ? (err - H.lastErr) / dt : 0); H.lastErr = err;
+    if (Math.abs(err) > 25) {                                                             // böyük sapma: 1,5 san ərzində azalmırsa (səhv istiqamət / ilişib) söndür
+      if (!H.refT) { H.refT = now; H.refErr = Math.abs(err); }
+      else if (now - H.refT > 1500) {
+        if (Math.abs(err) >= H.refErr - 3) { H.dead = true; trimWrite(0, true); holdInfo('Düz getmə dayandı: robot hədəf bucağa qayıda bilmir'); warn('Düz getmə söndürüldü: robot hədəf bucağa qayıtmır. Telefonun robota bərk bərkidildiyini və "Dönmə istiqaməti tərsdir" xanasını yoxlayın.', true); return; }
+        H.refT = now; H.refErr = Math.abs(err);
+      }
+    } else H.refT = 0;
+    if (Math.abs(err) > 1 && Math.abs(err) <= 15) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));   // motor fərqi yalnız kiçik sapmalarda öyrənilir
+    var tr = Math.max(-120, Math.min(120, H.bias - STR_KP * err - STR_KD * H.dErr));      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
     trimWrite(tr);
     holdInfo('Düz getmə: hədəf ' + f1(H.target) + '° · sapma ' + (err > 0 ? '+' : '') + f1(err) + '° · düzəliş ' + Math.round(tr * (turnInvert ? -1 : 1)) + '%');
   }
@@ -1118,6 +1127,8 @@
     $('gyH').textContent = gy.heading == null ? '—' : f1(gy.heading) + '°'; $('gyD').textContent = rel == null ? '—' : (rel > 0 ? '+' : '') + f1(rel) + '°';
     var el = Math.max(1, now - gy.t0); $('gyX').textContent = gy.curAxis.toUpperCase() + ' · ' + Math.round(gy.n * 1000 / el) + ' Hz';
     $('gyNeedle').style.transform = 'rotate(' + (rel == null ? 0 : rel) + 'deg)';
+    var hm = $('gyHold');                                      // düz getmə: robotun dayandığı (saxladığı) bucağın narıncı işarəsi
+    if (hdgHold.mark != null) { hm.style.display = 'block'; hm.style.opacity = hdgHold.on ? 1 : 0.45; hm.style.transform = 'rotate(' + angleDiff(hdgHold.mark, gy.zero == null ? 0 : gy.zero) + 'deg)'; } else hm.style.display = 'none';
     var tg = $('gyTgt');
     if (gt) {                                                // aktiv dönmə: hədəf oxu (yaşıl), irəliləyiş zolağı, başlanğıc α → hədəf α
       var tAlpha = (gt.startAlpha - gt.sign * gt.target + 720) % 360;
@@ -1143,7 +1154,7 @@
     if (!gt) return;
     gt.cum = gt.rateOk ? Math.max(gt.cumO, gt.cumR) : gt.cumO;                // iki müstəqil ölçmədən hansı irəlidədirsə, ona görə dayan (ötmə riskinə qarşı)
     if (gt.done) {
-      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v13.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
+      if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v14.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
       return;
     }
     if (gt.rateOk && !gt.rateChecked && gt.cumO >= 15) { gt.rateChecked = true; if (gt.cumR > gt.cumO * 1.6) gt.rateOk = false; }   // sürət sensoru anormal böyük göstərirsə, ona etibar etmə
