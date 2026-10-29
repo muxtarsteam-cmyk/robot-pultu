@@ -219,7 +219,8 @@
     <div class="row"><label for="localRec">Yerli tanıma</label><select id="localRec"><option value="1">Açıq (API-siz)</option><option value="0">Söndürülü</option></select></div>
     <div class="row"><label for="micMode">Mikrofon rejimi</label>
       <select id="micMode"><option value="auto">Davamlı (adla çağırış)</option><option value="ptt">Basıb saxla</option></select></div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="localCmd" checked> ⚡ Yerli əmr tanıma (irəli / geri / sağa / sola / dayan Gemini-yə getmir)</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="localCmd" checked disabled> ⚡ Yerli ad və əmr tanıma (həmişə aktiv: ad çəkilməyən səs Gemini-yə getmir)</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="wakeCloud"> 🛟 Ehtiyat: yerli tanıma işləməsə adı Gemini ilə yoxla (API limitini yeyir)</label>
     <div class="hint" id="localHint">Sadə hərəkət əmrləri telefonun öz səs tanıması ilə saniyəlik işlənir. Mikrofonla toqquşma olarsa və ya əmrlər tanınmazsa, bu xananı söndürün: onda bütün səslər Gemini ilə işlənir.</div>
     <div class="row"><label for="pauseMs">Susma gözləmə (ms)</label><input id="pauseMs" type="number" min="700" max="4000" step="100"></div>
     <div class="row"><label for="camFacing">Kamera</label>
@@ -1818,7 +1819,7 @@
     if (hn && hn === lastHeardN && Date.now() - lastHeardT < 4000) return;                           // eyni cümlənin təkrarı
     lastHeardN = hn; lastHeardT = Date.now();
     var intent = r.intent || 'none', needName = !(!STOP_NEEDS_NAME && (intent === 'stop' || (intent === 'drive' && r.drive === 'S')));
-    if (needName && !(r.called || active)) return;
+    if (needName && !(active || (wakeCloud && !localOn && r.called))) return;                                                       // yerli ad yoxlaması keçməyibsə Gemini-nin "called" cavabına inanma
     if (mission && intent !== 'stop' && !(intent === 'drive' && (r.drive === 'S' || mission.timed))) return;   // tapşırıq gedir (hərəkət əmri istisna)
     if ((acting && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S'))) return;           // başqa əməliyyat gedir
     if (intent === 'call') { activeUntil = Date.now() + AWAKE_MS; convo = true; }   // yalnız ad: bir əmr gözləyir
@@ -2044,8 +2045,9 @@
   // =====================================================================
   var localOn = false, webRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
   var LOCAL_WAIT_MS = 700, LOCAL_WAIT_ALIVE_MS = 1100;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
-  var localSetting = sget('local_cmd', '1') === '1';
-  $('localCmd').checked = localSetting;
+  var localSetting = true, wakeCloud = sget('wake_cloud', '0') === '1', deafWarned = false;
+  $('wakeCloud').checked = wakeCloud;
+  $('wakeCloud').addEventListener('change', function () { wakeCloud = this.checked; sset('wake_cloud', wakeCloud ? '1' : '0'); });
   // ===== YERLİ ƏMR FİLTRİ (Local Keyword Guard) =====
   // Mətndə təməl hərəkət sözü varsa -> əmr LOKAL işlənir, Gemini-yə sorğu QƏTİYYƏN getmir.
   // Yalnız uzun (>8 söz) və ya sual/söhbət xarakterli cümlələr Gemini-yə keçir.
@@ -2189,17 +2191,25 @@
   }
   // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
   function localGate(wav) {
-    if (!localOn || micMode === 'ptt') { handleWav(wav); return; }
+    if (micMode === 'ptt') { handleWav(wav); return; }                                // bas-danış: istifadəçi özü çağırır
+    if (!localOn) {                                                                   // yerli ad tanıma işləmir
+      if (wakeCloud) { handleWav(wav); return; }                                      // yalnız istifadəçi icazə veribsə: ad Gemini ilə yoxlanır
+      apiStats.skipped++; updateApiInfo();
+      if (!deafWarned) { deafWarned = true; note('Yerli ad tanıma işləmir: ad çəkilməyən səs Gemini-yə getmir. «Basıb saxla» düyməsini və ya ehtiyat qutusunu istifadə edin.'); }
+      return;
+    }
     var began = uttBegan, t0 = Date.now();
     (function waitLocal() {
       if (localHandledAt >= began) { apiStats.skipped++; updateApiInfo(); return; }   // yerli əmr işləndi: API sorğusu YOXDUR
-      var awake = Date.now() < activeUntil, alive = Date.now() - localSeenAt < 30000;
+      var awake = Date.now() < activeUntil;
       if (localSeenAt >= began) {                                                     // yerli mətn gəldi
-        if (!awake) { apiStats.skipped++; updateApiInfo(); return; }                  // Ziko çağırılmayıb (başqası danışır): at
-        handleWav(wav); return;
+        if (!awake) { apiStats.skipped++; updateApiInfo(); return; }                  // ad çəkilməyib: at (Gemini-yə getmir)
+        handleWav(wav); return;                                                       // ad çəkilib, sadə əmr deyil: Gemini
       }
-      var lim = awake ? 800 : (alive ? 2200 : LOCAL_WAIT_MS);                           // yuxuda: yerli mətni gözlə ki, kimin danışdığı bilinsin
-      if (Date.now() - t0 >= lim) { if (!awake && alive) { apiStats.skipped++; updateApiInfo(); return; } handleWav(wav); return; }
+      if (Date.now() - t0 >= (awake ? 800 : 2200)) {                                  // yerli mətn gəlmədi
+        if (awake) { handleWav(wav); return; }
+        apiStats.skipped++; updateApiInfo(); return;                                  // yuxuda: heç vaxt Gemini
+      }
       setTimeout(waitLocal, 25);
     })();
   }
@@ -2239,7 +2249,7 @@
     webRec = null;
     if (was) { try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {} }
   }
-  $('localCmd').addEventListener('change', function () { localSetting = this.checked; sset('local_cmd', localSetting ? '1' : '0'); if (voiceOn) { stopLocal(); startLocal(); } });
+  
 
   // ---------- Ümumi düymələr ----------
   function startVoice() { unlockTTS(); apiKey ? startGemini() : startNative(); }
