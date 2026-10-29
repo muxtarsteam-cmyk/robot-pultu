@@ -40,9 +40,6 @@
   .limtxt.full { color:#fca5a5; font-weight:600; }
   .chip { text-align:center; font-size:13px; padding:4px 8px; border-radius:999px; background:#16a34a22; border:1px solid #334155; margin-top:4px; transition:background .12s; }
   .chip.listen { background:#16a34a; } .chip.think { background:#7c3aed; } .chip.say { background:#0ea5e9; } .chip.off { background:#475569; } .chip.lock { background:var(--stop); }
-  .ctl { display:flex; gap:6px; margin-top:6px; align-items:center; }
-  .ctl button { flex:1; } .ctl input { flex:0 0 64px; min-width:0; border:0; border-radius:8px; padding:8px 4px; background:#0f172a; color:var(--text); font-size:14px; text-align:center; user-select:text; -webkit-user-select:text; }
-  .ctl span { font-size:13px; color:var(--muted); }
   .sl { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; color:var(--muted); }
   .sl label { flex:0 0 150px; } .sl b { color:var(--text); } .sl input[type=range] { flex:1; min-width:0; }
   .hint { font-size:11px; color:var(--muted); margin-top:4px; }
@@ -663,7 +660,7 @@
   function speakDevice(text, lang) {
     return new Promise(function (resolve) {
       var done = false, plugin = window.TTS && typeof window.TTS.speak === 'function';
-      var guard = setTimeout(fin, 4000 + text.length * 130);
+      var guard = setTimeout(fin, 2000 + text.length * 95);
       function fin() { if (done) return; done = true; clearTimeout(guard); resolve(); }
       function viaWeb() {
         if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
@@ -719,7 +716,7 @@
     var m = /rate=(\d+)/i.exec(a.mime || '');
     return pcmToWavBlob(bytes, m ? +m[1] : 24000);
   }
-  function tmSig() { var ac = new AbortController(); setTimeout(function () { ac.abort(); }, 15000); return ac.signal; }
+  function tmSig() { var ac = new AbortController(); setTimeout(function () { ac.abort(); }, 8000); return ac.signal; }
   async function gttsCall(model, text, legacy) {
     var url, init;
     if (!legacy) {
@@ -776,7 +773,7 @@
   async function playGemini(chunks, token) {
     var started = false, next = geminiTTS(chunks[0]);
     for (var i = 0; i < chunks.length; i++) {
-      var blob = await next;
+      var blob = await Promise.race([next, sleep(i === 0 ? 7000 : 12000).then(function () { return null; })]);   // səs gec gəlirsə gözləmə, telefon səsinə keç
       if (token !== speakToken) return true;
       if (!blob) { gttsFails++; if (gttsFails >= 3) { gttsPause = Date.now() + 120000; gttsFails = 0; } return started; }
       next = i + 1 < chunks.length ? geminiTTS(chunks[i + 1]) : null;       // növbətini öncədən hazırla
@@ -930,7 +927,7 @@
     if (isRateLimited || Date.now() < quotaUntil) { apiStats.skipped++; updateApiInfo(); throw new Error('Gemini limiti dolub. Bərpa: ' + fmtWait((quotaUntil - Date.now()) / 1000)); }
     if (!opts.fast) await apiThrottle();
     apiStats.calls++; if (hasImage(parts)) apiStats.img++; updateApiInfo();
-    var list = goodModel ? [goodModel] : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false;
+    var list = goodModel ? [goodModel].concat(MODELS.filter(function (m) { return m !== goodModel; }).slice(0, opts.fast ? 2 : 0)) : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false;
     for (var i = 0; i < list.length; i++) {
       var body = { contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 600 } };
       if (opts.fast && thinkOk !== '0' && !body.generationConfig.thinkingConfig) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };   // düşünmə vaxtını sıfırla: daha sürətli cavab
@@ -940,7 +937,10 @@
       recordCall();
       var ac = new AbortController(), tm = setTimeout(function () { ac.abort(); }, opts.timeout || 30000);
       try { r = await fetch(gUrl(list[i]), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ac.signal }); }
-      catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Gemini gec cavab verdi, yenidən cəhd edin' : 'Şəbəkə xətası. İnternet var?'); }
+      catch (e) {
+        if (e && e.name === 'AbortError' && opts.fast && i < list.length - 1) continue;      // gec cavab: dərhal başqa model
+        throw new Error(e && e.name === 'AbortError' ? 'Gemini gec cavab verdi, yenidən cəhd edin' : 'Şəbəkə xətası. İnternet var?');
+      }
       finally { clearTimeout(tm); }
       lastStatus = r.status;
       if (r.ok) {
@@ -1109,7 +1109,6 @@
   $('turnAuto').addEventListener('change', function () { turnAuto = this.checked; sset('turn_auto', turnAuto ? '1' : '0'); });
   // 0°/360° sərhədini nəzərə alan ən qısa işarəli fərq: a - b  ->  (-180, 180].  Məs: angleDiff(5, 355) = +10, angleDiff(355, 5) = -10
   function angleDiff(a, b) { var d = (a - b) % 360; if (d > 180) d -= 360; else if (d <= -180) d += 360; return d; }
-  function wrap180(a) { return angleDiff(a, 0); }
   // W3C DeviceOrientation fırlanma matrisi: alpha(Z) beta(X) gamma(Y). Telefonun ox vektorunun üfüqi proyeksiyasından istiqamət (saat əqrəbi, 0..360)
   function axisHeading(a, b, g, axis) {
     var r = Math.PI / 180, cx = Math.cos(b * r), sx = Math.sin(b * r), cy = Math.cos(g * r), sy = Math.sin(g * r), cz = Math.cos(a * r), sz = Math.sin(a * r);
@@ -1803,7 +1802,7 @@
     release = release || function () {};
     var b64 = await blobToBase64(wav);
     var active = Date.now() < activeUntil;
-    var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 900, fast: true });
+    var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 900, fast: true, timeout: 7000 });
     var r = parseJSON(t);
     if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
     lastVoice.textContent = String(r.heard || '—').slice(0, 140);
@@ -1824,8 +1823,8 @@
     switch (intent) {
       case 'stop': abortMission(); send('S'); note(''); break;
       case 'drive': if (!dupDrive(r)) await doDrive(r); break;
-      case 'call': await speak('Bəli, necə kömək edə bilərəm?'); break;
-      case 'ask': if (r.answer) await speak(String(r.answer)); break;
+      case 'call': if (Date.now() - lastGreetT > 4000) { lastGreetT = Date.now(); speak('Bəli, necə kömək edə bilərəm?').catch(function () {}); } break;
+      case 'ask': if (r.answer) speak(String(r.answer)).catch(function () {}); break;
       case 'long': await longReply(b64, r.heard); break;
       case 'remember': await rememberSubject(r.name, r.kind); break;
       case 'correct': await rememberSubject(r.name, r.kind || 'person', r.old || lastIdentified); break;
@@ -1862,7 +1861,8 @@
     if (routingBusy) { pendingWav = wav; return; }                      // eyni anda yalnız bir qərar sorğusu
     routingBusy = true; busy++; micUpdate(); updateVoiceBtn('send');
     var rel = false;
-    function release() { if (rel) return; rel = true; routingBusy = false; var nx = pendingWav; pendingWav = null; if (nx) setTimeout(function () { handleWav(nx); }, 0); }
+    var wdRel = setTimeout(function () { release(); }, 7000);
+    function release() { if (rel) return; rel = true; clearTimeout(wdRel); routingBusy = false; var nx = pendingWav; pendingWav = null; if (nx) setTimeout(function () { handleWav(nx); }, 0); }
     routeUtterance(wav, release).catch(function (e) {
       warn(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
     }).then(function () {
@@ -2030,7 +2030,7 @@
   //  YERLİ ƏMR TANIMA (Gemini-siz): sadə hərəkət əmrləri telefonun öz səs tanıması ilə tanınır
   //  Mürəkkəb / qeyri-standart cümlələr əvvəlki kimi Gemini-yə gedir.
   // =====================================================================
-  var localOn = false, localRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
+  var localOn = false, webRec = null, localErr = 0, localHandledAt = 0, localSeenAt = 0, lastLocalKey = '', lastLocalT = 0;
   var LOCAL_WAIT_MS = 700, LOCAL_WAIT_ALIVE_MS = 1100;                                                          // yerli nəticəni bu qədər gözlə; gəlməsə səs Gemini-yə gedir
   var localSetting = sget('local_cmd', '1') === '1';
   $('localCmd').checked = localSetting;
@@ -2120,13 +2120,38 @@
     if (sig === lastDriveSig && n - lastDriveT < 3000) return true;
     lastDriveSig = sig; lastDriveT = n; return false;
   }
+  var lastGreetT = 0;
+  function localChat(text) {                                                         // yalnız salam / çağırış / "eşidirsən": API-yə getmir
+    var toks = norm(text).split(' ').filter(Boolean); if (!toks.length) return null;
+    var wake = localWakeSet(), t = toks.filter(function (w) { return !wake[w]; }), hadWake = t.length !== toks.length, j = t.join(' ');
+    if (!j) return hadWake ? 'Bəli, necə kömək edə bilərəm?' : null;
+    if (/^(salam|salam aleykum|aleykum salam|salamlar)$/.test(j)) return 'Salam! Necə kömək edə bilərəm?';
+    if (/^((mene|sen) )?(esidirsen|esidirsenmi|esidirsen mi|esidirsiz|esidirsiz mi)$/.test(j)) return 'Bəli, səni eşidirəm.';
+    var G = { salam: 1, aleykum: 1, salamlar: 1, mene: 1, sen: 1, esidirsen: 1, esidirsenmi: 1, esidirsiz: 1, mi: 1, alo: 1, hey: 1 };
+    if (t.length <= 5 && t.every(function (w) { return G[w]; })) return /esidir/.test(j) ? 'Salam! Bəli, səni eşidirəm.' : 'Salam! Necə kömək edə bilərəm?';
+    return null;
+  }
+  function strictLocal(text) {                                                       // robot danışarkən: yalnız dəqiq baza əmri qəbul edilir
+    var c = dbLookup(text); if (!c) return null;
+    var n = norm(text); if (n.length >= 3 && lastSpokenNorm && lastSpokenNorm.indexOf(n) >= 0) return null;   // robotun öz səsinin əksi
+    return c;
+  }
   function onLocalText(matches) {
     if (!voiceOn || !localOn) return;
-    if (isSpeaking || Date.now() < ttsBusyUntil) return;                              // robot öz səsini əmr kimi anlamasın
-    localSeenAt = Date.now();
+    var talking = isSpeaking || Date.now() < ttsBusyUntil;                           // robot danışır: salam/söhbət qəbul edilmir, amma hərəkət əmri keçir
+    if (!talking) localSeenAt = Date.now();
     var cmd = null, heard = '';
-    for (var i = 0; i < matches.length && !cmd; i++) { cmd = localSimpleCommand(matches[i]); if (cmd) heard = matches[i]; }
+    for (var gi = 0; gi < matches.length && !talking; gi++) {
+      var gr = localChat(matches[gi]);
+      if (gr) {
+        localHandledAt = Date.now(); if (Date.now() - lastGreetT < 4000) return; lastGreetT = Date.now();
+        activeUntil = Date.now() + 15000; convo = true; lastVoice.textContent = matches[gi] + ' ⚡'; logChat('İstifadəçi', matches[gi]); apiStats.local++; updateApiInfo();
+        speak(gr); return;
+      }
+    }
+    for (var i = 0; i < matches.length && !cmd; i++) { cmd = talking ? strictLocal(matches[i]) : localSimpleCommand(matches[i]); if (cmd) heard = matches[i]; }
     if (!cmd) return;                                                                // sadə əmr deyil: Gemini yolu davam edir
+    if (talking) { stopSpeech(); endSpeakState(0); }                                 // danışarkən əmr gəldi: danışmanı kəs, əmri icra et
     localHandledAt = Date.now();                                                     // bu səs Gemini-yə göndərilməyəcək
     var key = norm(heard);
     if (key === lastLocalKey && Date.now() - lastLocalT < 1200) return;              // eyni cümlənin təkrarı
@@ -2170,18 +2195,18 @@
     if (sr) { localOn = true; localErr = 0; localLoop(); return; }
     if (WSR) {                                                                       // brauzerdə (APK-dan kənar) Web Speech API
       try {
-        localRec = new WSR(); localRec.lang = LANG; localRec.continuous = true; localRec.interimResults = false; localRec.maxAlternatives = 3;
-        localRec.onresult = function (e) { var r = e.results[e.results.length - 1], m = []; for (var i = 0; i < r.length; i++) m.push(r[i].transcript); onLocalText(m); };
-        localRec.onend = function () { if (localOn && voiceOn) { try { localRec.start(); } catch (e) {} } };
-        localRec.onerror = function () {};
-        localOn = true; localRec.start();
-      } catch (e) { localOn = false; localRec = null; }
+        webRec = new WSR(); webRec.lang = LANG; webRec.continuous = true; webRec.interimResults = false; webRec.maxAlternatives = 3;
+        webRec.onresult = function (e) { var r = e.results[e.results.length - 1], m = []; for (var i = 0; i < r.length; i++) m.push(r[i].transcript); onLocalText(m); };
+        webRec.onend = function () { if (localOn && voiceOn) { try { webRec.start(); } catch (e) {} } };
+        webRec.onerror = function () {};
+        localOn = true; webRec.start();
+      } catch (e) { localOn = false; webRec = null; }
     }
   }
   function stopLocal() {
     var was = localOn; localOn = false;
-    try { if (localRec) { localRec.onend = null; localRec.stop(); } } catch (e) {}
-    localRec = null;
+    try { if (webRec) { webRec.onend = null; webRec.stop(); } } catch (e) {}
+    webRec = null;
     if (was) { try { window.plugins.speechRecognition.stopListening(function () {}, function () {}); } catch (e) {} }
   }
   $('localCmd').addEventListener('change', function () { localSetting = this.checked; sset('local_cmd', localSetting ? '1' : '0'); if (voiceOn) { stopLocal(); startLocal(); } });
