@@ -1694,7 +1694,8 @@
   // =====================================================================
   var voiceOn = false, activeUntil = 0, convo = false, AWAKE_MS = 10000;      // AWAKE_MS: yalnız "Ziko" tək deyiləndə əmr gözləmə müddəti
   var STOP_NEEDS_NAME = false;                                                    // true etsəniz "dayan" da adsız işləməz (təhlükəsizlik üçün false saxlanıb)
-  function goSleep() { activeUntil = 0; convo = false; }                          // əmr qəbul edildi: robot yuxuya keçir, növbəti əmr üçün yenidən ad çəkilməlidir
+  function goSleep() { activeUntil = 0; convo = false; try { if (voiceOn && !isSpeaking) updateVoiceBtn('idle'); } catch (e) {} }
+  function wakeUp() { activeUntil = Date.now() + AWAKE_MS; try { if (voiceOn && !isSpeaking) updateVoiceBtn('talk'); } catch (e) {} }                          // əmr qəbul edildi: robot yuxuya keçir, növbəti əmr üçün yenidən ad çəkilməlidir
   function updateVoiceBtn(state) {
     voiceBtn.classList.toggle('on', voiceOn);
     voiceBtn.classList.toggle('talk', voiceOn && state === 'talk');
@@ -1895,7 +1896,7 @@
     if (!speaking) {
       noise = noise * 0.97 + rms * 0.03;
       preRoll.push(chunk); if (preRoll.length > 8) preRoll.shift();
-      if (rms > thr) { speaking = true; uttBegan = Date.now() - 500; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; updateVoiceBtn('talk'); }
+      if (rms > thr) { speaking = true; uttBegan = Date.now() - 500; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; if (Date.now() < activeUntil) updateVoiceBtn('talk'); }
     } else {
       speech.push(chunk); speechMs += ms;
       // danışıq zamanı həssaslıq artır (cümlənin sonundakı yumşaq hecalar susma sayılmasın)
@@ -2012,9 +2013,9 @@
     var cmd = null, heard = '';
     for (var i = 0; i < matches.length && !cmd; i++) { cmd = parseVoiceFull(matches[i]); if (cmd) heard = matches[i]; }
     if (!heard && matches.length) heard = matches[0];
-    lastVoice.textContent = heard || '—';
     var named = matches.some(hasWake);
-    if (named) { activeUntil = Date.now() + AWAKE_MS; convo = true; }
+    if (named) { wakeUp(); convo = true; }
+    if (named || Date.now() < activeUntil) lastVoice.textContent = heard || '—';      // yuxuda deyilən söz ekranda göstərilmir
     if (!cmd) return;                                                                // yalnız "Ziko": bir əmr gözləyir
     if ((STOP_NEEDS_NAME || cmd.drive !== 'S') && Date.now() >= activeUntil) return; // ad çəkilməyib: əmr qəbul edilmir
     goSleep(); doDrive(cmd);
@@ -2162,7 +2163,7 @@
     if (!voiceOn || !localOn) return;
     var talking = isSpeaking || Date.now() < ttsBusyUntil;                           // robot danışır: salam/söhbət qəbul edilmir, amma hərəkət əmri keçir
     if (!talking) localSeenAt = Date.now();
-    if (!talking) { for (var wi = 0; wi < matches.length; wi++) if (hasWake(matches[wi])) { activeUntil = Date.now() + AWAKE_MS; convo = false; break; } }   // Ziko çağırıldı: robot ayıldı (bu cümlədəki əmr üçün)
+    if (!talking) { for (var wi = 0; wi < matches.length; wi++) if (hasWake(matches[wi])) { wakeUp(); convo = false; break; } }   // Ziko çağırıldı: robot ayıldı (bu cümlədəki əmr üçün)
     var cmd = null, heard = '';
     for (var gi = 0; gi < matches.length && !talking && Date.now() < activeUntil; gi++) {
       var gr = localChat(matches[gi]);
