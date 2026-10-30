@@ -120,7 +120,7 @@
 
   <div class="live" id="liveBox">
     <div class="chip off" id="stateChip">🔇 Mikrofon söndürülüb</div>
-    <div class="lvrow"><span class="lvlab">🎧 Robot səni belə başa düşdü</span><div id="lastVoice">—</div><div id="wakeBadge" style="font-size:12px;margin-top:4px;color:var(--muted)">💤 Yuxudadır</div></div>
+    <div class="lvrow"><span class="lvlab">🎧 Robot səni belə başa düşdü</span><div id="lastVoice">—</div><div id="wakeBadge" style="white-space:pre-line;font-size:12px;margin-top:4px;color:var(--muted)">💤 Yuxudadır</div></div>
     <div class="lvrow"><span class="lvlab">🤖 Robotun reaksiyası</span><div id="botLine">—</div></div>
     <div class="lvrow"><span class="lvlab">⚙ Əmr statusu</span><div id="missionLine">Tapşırıq yoxdur</div></div>
   </div>
@@ -220,7 +220,7 @@
     <div class="row"><label for="micMode">Mikrofon rejimi</label>
       <select id="micMode"><option value="auto">Davamlı (adla çağırış)</option><option value="ptt">Basıb saxla</option></select></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="localCmd" checked disabled> ⚡ Yerli ad və əmr tanıma (həmişə aktiv: ad çəkilməyən səs Gemini-yə getmir)</label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="wakeCloud"> 🛟 Yerli tanıma işləməsə: adı qısa səslərdə (≤5 san, dəqiqədə ≤10) Gemini ilə yoxla</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="wakeCloud"> 🛟 Yerli tanıma işləməsə: adı qısa səslərdə (≤4 san, dəqiqədə ≤5) Gemini ilə yoxla</label>
     <div class="hint" id="localHint">Sadə hərəkət əmrləri telefonun öz səs tanıması ilə saniyəlik işlənir. Mikrofonla toqquşma olarsa və ya əmrlər tanınmazsa, bu xananı söndürün: onda bütün səslər Gemini ilə işlənir.</div>
     <div class="row"><label for="pauseMs">Susma gözləmə (ms)</label><input id="pauseMs" type="number" min="700" max="4000" step="100"></div>
     <div class="row"><label for="camFacing">Kamera</label>
@@ -915,7 +915,7 @@
   }
   setInterval(function () {
     var b = $('wakeBadge'); if (!b) return; var left = activeUntil - Date.now(), working = acting || !!mission || busy > 0;
-    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + (robotName || 'Ziko') + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + (robotName || 'Ziko') + '» deyin' + (voiceOn ? ' [səs ' + dbg.utt + ' · yoxlama ' + dbg.cloud + ' · «' + (robotName || 'Ziko') + '» ' + dbg.named + ']' : '');
+    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + (robotName || 'Ziko') + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + (robotName || 'Ziko') + '» deyin' + (voiceOn ? ' [səs ' + dbg.utt + ' · yoxlama ' + dbg.cloud + ' · «' + (robotName || 'Ziko') + '» ' + dbg.named + ']' + (dbg.err ? '\n⚠ ' + dbg.err : '') + (dbg.last ? '\n👂 son yoxlama: «' + dbg.last + '»' : '') : '');
     b.style.color = left > 0 ? 'var(--ok)' : working ? 'var(--warn)' : 'var(--muted)';
   }, 500);
   setInterval(limUpdate, 1000);
@@ -1791,9 +1791,10 @@
       'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
   }
 
-  async function transcribe(wav) {
+  async function transcribe(wav, wake) {
     var b64 = await blobToBase64(wav);
-    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true });
+    var hint = wake ? ' The speaker may call a small robot named "' + robotName + '" (it can sound like Ziko, Zeko, Siko, Zigo). If you hear that name, write it exactly as "' + robotName + '". If the audio has no clear speech, output nothing.' : '';
+    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' + hint }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true });
     return t.trim();
   }
 
@@ -2153,8 +2154,10 @@
   }
   function hasWake(text) {                                                           // "Ziko" (və yaxın səhv eşitmələr: zeko, ziqo, zika ...)
     var w = localWakeSet(), t = norm(text).split(' '), keys = Object.keys(w), i, j;
+    for (i = 0; i + 1 < t.length; i++) if (t[i].length <= 3 && w[t[i] + t[i + 1]]) return true;   // "zi ko" -> "ziko"
     for (i = 0; i < t.length; i++) {
       if (w[t[i]]) return true;
+      if (t[i].length >= 3 && t[i].length <= 6 && /^[zsc]/.test(t[i]) && /[ko]$/.test(t[i]) && lev(t[i], 'ziko') <= 2) return true;   // zeyko, zico, sigo, ziyo ...
       if (t[i].length >= 4 && t[i].length <= 5) for (j = 0; j < keys.length; j++) if (keys[j].length >= 4 && lev(t[i], keys[j]) <= 1) return true;
     }
     return false;
@@ -2191,15 +2194,16 @@
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); });
   }
   // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
-  var wakeChecks = [], dbg = { utt: 0, cloud: 0, named: 0 };
+  var wakeChecks = [], dbg = { utt: 0, cloud: 0, named: 0, last: '', err: '' };
   function cloudWake(wav) {                                                           // yerli tanıma yoxdur: yuxuda ən çox 10 qısa yoxlama / dəqiqə
     if (isRateLimited) { apiStats.skipped++; updateApiInfo(); return; }
     if (Date.now() < activeUntil) { handleWav(wav); return; }                          // oyaqdır: əmr birbaşa Gemini-yə
     var sec = (wav.size - 44) / 32000, now = Date.now(), began = uttBegan;
     wakeChecks = wakeChecks.filter(function (t) { return now - t < 60000; });
-    if (sec > 5 || wakeChecks.length >= 10) { apiStats.skipped++; updateApiInfo(); return; }   // uzun danışıq / limit: yoxlama yoxdur
+    if (sec > 4 || wakeChecks.length >= 5) { apiStats.skipped++; updateApiInfo(); return; }   // uzun danışıq / limit: yoxlama yoxdur
     wakeChecks.push(now); dbg.cloud++;
-    transcribe(wav).catch(function () { return ''; }).then(function (txt) {
+    transcribe(wav, true).catch(function (e) { dbg.err = (e && e.message ? e.message : String(e)).slice(0, 60); return ''; }).then(function (txt) {
+      dbg.last = String(txt || '').slice(0, 40);
       if (!txt || !hasWake(txt)) { apiStats.skipped++; updateApiInfo(); return; }        // ad yoxdur: tam atılır
       dbg.named++;
       onLocalText([txt]);                                                              // ad var: oyan; sadə əmr / salam yerli işlənir
