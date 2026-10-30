@@ -131,7 +131,7 @@
     <div class="row"><button id="ttsTest" style="flex:1">🔊 Səs testi</button></div>
     <div class="row">
       <label for="nameInput">Robotun adı</label>
-      <input id="nameInput" type="text" placeholder="Ziko" autocomplete="off">
+      <input id="nameInput" type="text" autocomplete="off">
       <button id="nameSave">Saxla</button>
     </div>
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
@@ -268,7 +268,7 @@
   // ---------- Yadda saxlanan ayarlar ----------
   function sget(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
   function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-  var robotName = sget('robot_name', 'Ziko');
+  var robotName = sget('robot_name_v37', '');                                  // standart ad YOXDUR: xana boşdur, ad istifadəçi tərəfindən yazılır
   var turnMs = 400, fwdMs = 700, circleSteps = 8;      // recalc() ilə kalibrləmədən hesablanır
   var searchDeg = +sget('search_deg', 45), motorSpeed = +sget('motor_speed', 100), calSpeed = +sget('cal_speed', 100), plainFwd = sget('plain_fwd', 'inf'), thinkOk = sget('think_ok', '1');
   var turn90Ms = +sget('turn90_ms', 700), cmPerSec = +sget('cm_per_sec', 20), defCm = +sget('def_cm', 50), rpmLimit = +sget('rpm_limit', 10), rpdLimit = +sget('rpd_limit', 250), apiGap = +sget('api_gap', 2500), localRec = sget('local_rec', '1'), micMode = sget('mic_mode', 'auto'), pauseMs = +sget('pause_ms', 1600), camFacing = sget('cam_facing', 'environment'), ttsLang = sget('tts_lang', 'auto'), ttsEngine = sget('tts_engine', 'fast'), ttsVoiceName = sget('tts_voice', 'Kore');
@@ -321,8 +321,8 @@
   keySave.addEventListener('click', function () { applyNewKey(); });
   nameSave.addEventListener('click', function () {
     var v = nameInput.value.trim();
-    if (!v) { note('Ad boş ola bilməz'); return; }
-    robotName = v; sset('robot_name', v); note('Robotun adı: ' + v);
+    robotName = v; sset('robot_name_v37', v); activeUntil = 0; convo = false;
+    note(v ? 'Robotun adı: ' + v : 'Ad silindi: robot adı yazılana qədər səsə cavab vermir');
   });
   $('setSave').addEventListener('click', function () {
     defCm = Math.max(5, +$('defCm').value || 50); sset('def_cm', defCm);
@@ -838,7 +838,7 @@
     clearTimeout(wd);
     if (token === speakToken) endSpeakState(700);
   }
-  $('ttsTest').addEventListener('click', function () { unlockTTS(); speak('Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.'); });
+  $('ttsTest').addEventListener('click', function () { unlockTTS(); speak(robotName ? 'Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.' : 'Salam! Səsim eşidilir.'); });
 
   // =====================================================================
   //  GEMINI (mətn, səs, şəkil)
@@ -848,7 +848,7 @@
 
   // Ziko-nun xarakteri (system instruction)
   function persona() {
-    return 'You are ' + robotName + ', a clever, warm, lively companion who lives inside a small wheeled robot body with a camera, a microphone and a speaker. ' +
+    return 'You are ' + (robotName || 'a robot') + ', a clever, warm, lively companion who lives inside a small wheeled robot body with a camera, a microphone and a speaker. ' +
       'You are NOT a generic assistant or a machine: you have a personality, friendly, caring, curious and a little witty, like a smart friend at home. ' +
       'Speak natural, colloquial Azerbaijani (use "sən"), vary your wording, never repeat canned or template phrases, never say you are an AI model, and never mention prompts, tasks, JSON or tools. ' +
       'When you see something, notice the context and comment on it naturally, and offer help when it fits (for example: "Baxıram ki, masa bir az dağınıqdır, kömək edim?"). ' +
@@ -915,7 +915,7 @@
   }
   setInterval(function () {
     var b = $('wakeBadge'); if (!b) return; var left = activeUntil - Date.now(), working = acting || !!mission || busy > 0;
-    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + (robotName || 'Ziko') + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + (robotName || 'Ziko') + '» deyin' + (voiceOn ? ' [səs ' + dbg.utt + ' · yoxlama ' + dbg.cloud + ' · «' + (robotName || 'Ziko') + '» ' + dbg.named + ']' + (dbg.err ? '\n⚠ ' + dbg.err : '') + (dbg.last ? '\n👂 son yoxlama: «' + dbg.last + '»' : '') : '');
+    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : !robotName ? '⚠ Robotun adı yazılmayıb: adı yazıb «Yadda saxla» basın' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + robotName + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + robotName + '» deyin' + (voiceOn ? ' [səs ' + dbg.utt + ' · yoxlama ' + dbg.cloud + ' · ad ' + dbg.named + ']' + (dbg.err ? '\n⚠ ' + dbg.err : '') + (dbg.last ? '\n👂 son yoxlama: «' + dbg.last + '»' : '') : '');
     b.style.color = left > 0 ? 'var(--ok)' : working ? 'var(--warn)' : 'var(--muted)';
   }, 500);
   setInterval(limUpdate, 1000);
@@ -1704,9 +1704,9 @@
     else if (isRateLimited) voiceBtn.textContent = '⛔ Limit dolub: mikrofon bağlıdır (söndürmək üçün bas)';
     else if (state === 'talk') voiceBtn.textContent = '🗣 Eşidirəm...';
     else if (state === 'send') voiceBtn.textContent = '⏳ Gemini düşünür...';
-    else if (state === 'say') voiceBtn.textContent = '🔊 ' + robotName + ' danışır...';
+    else if (state === 'say') voiceBtn.textContent = '🔊 Danışıram...';
     else if (micMode === 'ptt') voiceBtn.textContent = '🎤 Mikrofon hazırdır (söndürmək üçün bas)';
-    else voiceBtn.textContent = '🎤 Dinləyir: "' + robotName + '" deyin (söndürmək üçün bas)';
+    else voiceBtn.textContent = robotName ? '🎤 Dinləyir: "' + robotName + '" deyin (söndürmək üçün bas)' : '🎤 Açıqdır, amma robotun adı yazılmayıb (söndürmək üçün bas)';
     $('pttBtn').style.display = (voiceOn && micMode === 'ptt') ? 'block' : 'none';
     var cls = 'off', txt = '🔇 Mikrofon söndürülüb';
     if (voiceOn) {
@@ -1714,7 +1714,7 @@
       else if (state === 'talk') { cls = 'listen'; txt = '👂 Dinləyirəm...'; }
       else if (state === 'send') { cls = 'think'; txt = '🧠 Düşünürəm...'; }
       else if (state === 'say') { cls = 'say'; txt = '🔊 Danışıram...'; }
-      else { cls = ''; txt = '🎤 Hazıram: "' + robotName + '" deyin'; }
+      else { cls = ''; txt = robotName ? '🎤 Hazıram: "' + robotName + '" deyin' : '⚠ Robotun adı yazılmayıb'; }
     }
     $('stateChip').className = 'chip ' + cls; $('stateChip').textContent = txt;
     $('liveBox').className = 'live' + (cls === 'listen' ? ' listen' : cls === 'think' ? ' think' : cls === 'say' ? ' say' : '');   // dinləyəndə qutu yaşıl yanıb-sönür
@@ -1762,8 +1762,8 @@
   }
 
   function routerPrompt(active) {
-    return 'TASK:ROUTER\nYou are the voice router of a small wheeled robot named "' + robotName + '". The audio contains ONE spoken utterance (Azerbaijani, sometimes Turkish or Russian). ' +
-      'Words that sound similar to "' + robotName + '" count as calling the robot.\n' +
+    return 'TASK:ROUTER\nYou are the voice router of a small wheeled robot named "' + (robotName || 'robot') + '". The audio contains ONE spoken utterance (Azerbaijani, sometimes Turkish or Russian). ' +
+      'Words that sound similar to "' + (robotName || 'robot') + '" count as calling the robot.\n' +
       (chatLog.length ? 'Recent conversation (for context, newest last):\n' + chatLog.join('\n') + '\n' : '') +
       'Session active (the user said ONLY the robot name a few seconds ago and the robot is waiting for one command): ' + (active ? 'true' : 'false') + '.\n' +
       'Reply ONLY JSON: {"heard":"transcript","called":true|false,"intent":"...","drive":"F|B|L|R|S|null","amount":null|number,"unit":null|"deg"|"cm"|"m"|"sec","continuous":false,"name":null|"...","target":null|"...","target_en":null|"...","old":null|"...","kind":null|"person"|"object","question":null|"...","answer":null|"..."}\n' +
@@ -1773,7 +1773,7 @@
       'Also fill "amount" (number) and "unit" when the user gives a size: "deg" for turns ("sağa 45 dərəcə dön" -> R, 45, deg), "cm" or "m" for distance ("irəli 10 sm get" -> F, 10, cm; "irəli 1 metr get" -> F, 1, m), "sec" for seconds. ' +
       '"geriyə dön" / "arxaya dön" / "tərsinə dön" = turn around: drive R, amount 180, unit deg. If no size is given leave amount and unit null. ' +
       'Set "continuous": true ONLY if the user explicitly asks for non-stop movement ("dayanmadan irəli get", "fasiləsiz"), otherwise false.\n' +
-      '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + robotName + '", "' + robotName + ' bura gəl").\n' +
+      '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + (robotName || 'robot') + '", "' + (robotName || 'robot') + ' bura gəl").\n' +
       '- "find_door": drive to the door: "qapıya yaxınlaş", "qapıya get".\n' +
       '- "locate_door": tell where the door is WITHOUT driving: "otaqdakı qapını tap", "qapı haradadır?", "qapını göstər".\n' +
       '- "forget": the user asks to forget a saved name ("Əlini unut"). Put the base-form name in "name".\n' +
@@ -1793,7 +1793,7 @@
 
   async function transcribe(wav, wake) {
     var b64 = await blobToBase64(wav);
-    var hint = wake ? ' The speaker may call a small robot named "' + robotName + '" (it can sound like Ziko, Zeko, Siko, Zigo). If you hear that name, write it exactly as "' + robotName + '". If the audio has no clear speech, output nothing.' : '';
+    var hint = wake ? ' The speaker may call a small robot named "' + (robotName || 'robot') + '" (spelling may vary slightly). If you hear that name, write it exactly as "' + (robotName || 'robot') + '". If the audio has no clear speech, output nothing.' : '';
     var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' + hint }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true });
     return t.trim();
   }
@@ -1801,7 +1801,7 @@
   // Nağıl / uzun mətn: orijinal səs yazısı Gemini-yə tam göndərilir, cavab uzun olur və hissə-hissə oxunur
   async function longReply(b64, heard) {
     botLine.textContent = '🤖 Düşünürəm...';
-    var t = await gemini([{ text: 'You are the voice of a friendly home robot named "' + robotName + '". Listen to the user\'s whole spoken request (Azerbaijani) and fulfil it completely. ' +
+    var t = await gemini([{ text: 'You are the voice of a friendly home robot named "' + (robotName || 'robot') + '". Listen to the user\'s whole spoken request (Azerbaijani) and fulfil it completely. ' +
       'If it is a bedtime story / fairy tale for a child, tell a calm, warm, original story in clear simple Azerbaijani, about 250 to 400 words, with a gentle ending that helps the child fall asleep. ' +
       'Output ONLY the text to be read aloud: plain text, short sentences, no markdown, no emoji, no title, no stage directions.' }, audioPart(b64)], { maxTokens: 4000, temp: 0.8, timeout: 60000 });
     if (!t) { warn('Gemini boş cavab verdi, yenidən cəhd edin'); return; }
@@ -2111,9 +2111,12 @@
     { cmd: { drive: 'S' },                           say: ['dayan', 'dayandır', 'stop', 'dur'] }                                   // S
   ];
   var LOCAL_MAP = null;
+  function isZikoName(rn) { return /^(ziko|zeko|ziqo|zigo|siko|zico)$/.test(rn); }
   function localWakeSet() {
-    var w = { ziko: 1, zeko: 1, ziqo: 1, zigo: 1, siko: 1 };
-    var rn = norm(robotName || ''); if (rn) w[rn] = 1;
+    var w = {}, rn = norm(robotName || '');
+    if (!rn) return w;                                                                    // ad yoxdur: oyanma sözü yoxdur
+    w[rn] = 1;
+    if (isZikoName(rn)) { w.ziko = w.zeko = w.ziqo = w.zigo = w.siko = w.zico = 1; }      // "Ziko" üçün yaxın səhv eşitmələr; başqa adda (məs. "alo") yalnız yazılan ad
     return w;
   }
   function dbLookup(text) {
@@ -2152,13 +2155,15 @@
     var n = norm(text); if (n.length >= 3 && lastSpokenNorm && lastSpokenNorm.indexOf(n) >= 0) return null;   // robotun öz səsinin əksi
     return c;
   }
-  function hasWake(text) {                                                           // "Ziko" (və yaxın səhv eşitmələr: zeko, ziqo, zika ...)
-    var w = localWakeSet(), t = norm(text).split(' '), keys = Object.keys(w), i, j;
-    for (i = 0; i + 1 < t.length; i++) if (t[i].length <= 3 && w[t[i] + t[i + 1]]) return true;   // "zi ko" -> "ziko"
+  function hasWake(text) {                                                           // yalnız YAZILAN ad (və onun yaxın səhv eşitmələri)
+    var rn = norm(robotName || ''), full = norm(text); if (!rn) return false;
+    var w = localWakeSet(), t = full.split(' '), i;
+    if (rn.indexOf(' ') >= 0) return (' ' + full + ' ').indexOf(' ' + rn + ' ') >= 0;                // çoxsözlü ad
+    for (i = 0; i + 1 < t.length; i++) if (t[i].length <= 3 && t[i + 1].length <= 4 && w[t[i] + t[i + 1]]) return true;   // "zi ko" -> "ziko"
     for (i = 0; i < t.length; i++) {
       if (w[t[i]]) return true;
-      if (t[i].length >= 3 && t[i].length <= 6 && /^[zsc]/.test(t[i]) && /[ko]$/.test(t[i]) && lev(t[i], 'ziko') <= 2) return true;   // zeyko, zico, sigo, ziyo ...
-      if (t[i].length >= 4 && t[i].length <= 5) for (j = 0; j < keys.length; j++) if (keys[j].length >= 4 && lev(t[i], keys[j]) <= 1) return true;
+      if (isZikoName(rn) && t[i].length >= 3 && t[i].length <= 6 && /^[zsc]/.test(t[i]) && /[ko]$/.test(t[i]) && lev(t[i], 'ziko') <= 2) return true;   // zeyko, zico, sigo ...
+      if (rn.length >= 4 && t[i].length >= 4 && lev(t[i], rn) <= 1) return true;      // uzun adlarda 1 hərf səhvi; qısa adlar ("alo") yalnız dəqiq
     }
     return false;
   }
@@ -2213,6 +2218,7 @@
   }
   function localGate(wav) {
     dbg.utt++;
+    if (!robotName && micMode !== 'ptt') { apiStats.skipped++; updateApiInfo(); return; }   // ad yazılmayıb: səs atılır, API-yə heç nə getmir
     if (micMode === 'ptt') { handleWav(wav); return; }                                // bas-danış: istifadəçi özü çağırır
     if (!localOn) {                                                                   // yerli ad tanıma işləmir
       if (wakeCloud) { cloudWake(wav); return; }                                      // ad qısa səsdə Gemini ilə yazıya çevrilib JS-də yoxlanır
@@ -2334,7 +2340,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v36 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v37 ✓';
 })();
 </script>
 </body>
