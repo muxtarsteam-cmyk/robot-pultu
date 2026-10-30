@@ -818,8 +818,9 @@
     stopSpeech();
     var token = speakToken;
     lastSpokenNorm = norm(text).slice(-500); logChat('Ziko', text);
-    isSpeaking = true; ttsBusyUntil = Date.now() + 240000; muteMic(true);
-    var wd = setTimeout(function () { if (token === speakToken) { stopSpeech(); endSpeakState(500); } }, 240000);   // heç vaxt donub qalmasın
+    var maxMs = Math.min(240000, 15000 + text.length * 110);                       // mətnin uzunluğuna görə: qısa cavab donarsa ≤ 30 san sonra mikrofon açılır
+    isSpeaking = true; ttsBusyUntil = Date.now() + maxMs; muteMic(true);
+    var wd = setTimeout(function () { if (token === speakToken) { stopSpeech(); endSpeakState(500); } }, maxMs);   // heç vaxt donub qalmasın
     if (voiceOn) updateVoiceBtn('say');
     try {
       var played = false, clean = normalizeSpeech(text, false), online = navigator.onLine !== false;
@@ -915,7 +916,7 @@
   }
   setInterval(function () {
     var b = $('wakeBadge'); if (!b) return; var left = activeUntil - Date.now(), working = acting || !!mission || busy > 0;
-    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : !robotName ? '⚠ Robotun adı yazılmayıb: adı yazıb «Yadda saxla» basın' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + robotName + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + robotName + '» deyin' + (voiceOn ? ' [səs ' + dbg.utt + ' · yoxlama ' + dbg.cloud + ' · ad ' + dbg.named + ']' + (dbg.err ? '\n⚠ ' + dbg.err : '') + (dbg.last ? '\n👂 son yoxlama: «' + dbg.last + '»' : '') : '');
+    b.textContent = left > 0 ? '🟢 Oyaqdır (' + Math.ceil(left / 1000) + ' san): əmr verin' : !robotName ? '⚠ Robotun adı yazılmayıb: adı yazıb «Yadda saxla» basın' : working ? '⚙️ İcra edir... (dayandırmaq üçün «' + robotName + ' dayan»)' : '💤 Yuxudadır: hər əmrdən əvvəl «' + robotName + '» deyin' + (voiceOn ? ' [səs ' + dbg.utt + ' · yoxlama ' + dbg.cloud + ' · ad ' + dbg.named + ']' + (dbg.err ? '\n⚠ ' + dbg.err : '') + (dbg.last ? '\n👂 son yoxlama: «' + dbg.last + '»' : '') + (dbg.tr || dbg.rt ? '\n⏱ yazıya çevirmə ' + (dbg.tr / 1000).toFixed(1) + ' san · Gemini qərarı ' + (dbg.rt / 1000).toFixed(1) + ' san' : '') : '');
     b.style.color = left > 0 ? 'var(--ok)' : working ? 'var(--warn)' : 'var(--muted)';
   }, 500);
   setInterval(limUpdate, 1000);
@@ -933,7 +934,7 @@
     if (isRateLimited || Date.now() < quotaUntil) { apiStats.skipped++; updateApiInfo(); throw new Error('Gemini limiti dolub. Bərpa: ' + fmtWait((quotaUntil - Date.now()) / 1000)); }
     if (!opts.fast) await apiThrottle();
     apiStats.calls++; if (hasImage(parts)) apiStats.img++; updateApiInfo();
-    var list = goodModel ? [goodModel].concat(MODELS.filter(function (m) { return m !== goodModel; }).slice(0, opts.fast ? 2 : 0)) : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false;
+    var list = goodModel ? [goodModel].concat(MODELS.filter(function (m) { return m !== goodModel; }).slice(0, opts.fast ? 1 : 0)) : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false, aborts = 0;
     for (var i = 0; i < list.length; i++) {
       var body = { contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 600 } };
       if (opts.fast && thinkOk !== '0' && !body.generationConfig.thinkingConfig) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };   // düşünmə vaxtını sıfırla: daha sürətli cavab
@@ -944,7 +945,7 @@
       var ac = new AbortController(), tm = setTimeout(function () { ac.abort(); }, opts.timeout || 30000);
       try { r = await fetch(gUrl(list[i]), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ac.signal }); }
       catch (e) {
-        if (e && e.name === 'AbortError' && opts.fast && i < list.length - 1) continue;      // gec cavab: dərhal başqa model
+        if (e && e.name === 'AbortError' && opts.fast && i < list.length - 1 && ++aborts < 2) continue;      // gec cavab: dərhal başqa model
         throw new Error(e && e.name === 'AbortError' ? 'Gemini gec cavab verdi, yenidən cəhd edin' : 'Şəbəkə xətası. İnternet var?');
       }
       finally { clearTimeout(tm); }
@@ -1052,7 +1053,7 @@
     lastVision = Date.now();
     var parts = [{ text: instruction }].concat(extraParts || []);
     parts.push({ text: 'Current frame:' }); parts.push(imgPart(grabFrame(480, 0.6)));
-    return parseJSON(await gemini(parts, { json: true, maxTokens: 500, nosys: true, fast: true })) || {};
+    return parseJSON(await gemini(parts, { json: true, maxTokens: 500, nosys: true, fast: true, timeout: 12000 })) || {};
   }
 
   // =====================================================================
@@ -1794,7 +1795,7 @@
   async function transcribe(wav, wake) {
     var b64 = await blobToBase64(wav);
     var hint = wake ? ' The speaker may call a small robot named "' + (robotName || 'robot') + '" (spelling may vary slightly). If you hear that name, write it exactly as "' + (robotName || 'robot') + '". If the audio has no clear speech, output nothing.' : '';
-    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' + hint }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true });
+    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' + hint }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true, timeout: wake ? 6000 : 10000 });
     return t.trim();
   }
 
@@ -1812,7 +1813,9 @@
     release = release || function () {};
     var b64 = await blobToBase64(wav);
     var active = Date.now() < activeUntil;
+    var tq = Date.now();
     var t = await gemini([{ text: routerPrompt(active) }, audioPart(b64)], { json: true, maxTokens: 900, fast: true, timeout: 7000 });
+    dbg.rt = Date.now() - tq;
     var r = parseJSON(t);
     if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
     lastVoice.textContent = String(r.heard || '—').slice(0, 140);
@@ -1857,8 +1860,8 @@
     var pcm = downsample(concat(chunks), curRate, 16000);
     if (pcm.length < 16000 * 0.3) { apiStats.skipped++; updateApiInfo(); return; }                    // çox qısa səs-küy: API-yə göndərmə
     var e2 = 0, k2; for (k2 = 0; k2 < pcm.length; k2 += 8) e2 += pcm[k2] * pcm[k2]; if (Math.sqrt(e2 / (pcm.length / 8)) < 0.012) { apiStats.skipped++; updateApiInfo(); return; }   // demək olar ki, səssiz
-    if (pcm.length > 16000 * 60) pcm = pcm.subarray(0, 16000 * 60);                // çox qısa səs-küy
-    var wav = toWav(pcm, 16000);
+    if (pcm.length > 16000 * 20) pcm = pcm.subarray(0, 16000 * 20);                // çox qısa səs-küy
+    var wav = toWav(pcm, 16000); wav.t0 = Date.now();
     if (replyWaiter) {                                    // robot sual verib, cavab gözləyir
       var w = replyWaiter; replyWaiter = null; clearTimeout(w.t);
       busy++; updateVoiceBtn('send');
@@ -1868,6 +1871,7 @@
     localGate(wav);                                       // əvvəl yerli əmr tanıma: sadə hərəkət əmri olarsa, səs Gemini-yə GÖNDƏRİLMİR
   }
   function handleWav(wav) {
+    if (wav.t0 && Date.now() - wav.t0 > 12000) { apiStats.skipped++; updateApiInfo(); return; }   // köhnəlib: gec cavab vermək əvəzinə at
     if (isRateLimited) { apiStats.skipped++; updateApiInfo(); return; }                  // limit dolub: Gemini-yə heç nə göndərmə
     if (routingBusy) { pendingWav = wav; return; }                      // eyni anda yalnız bir qərar sorğusu
     routingBusy = true; busy++; micUpdate(); updateVoiceBtn('send');
@@ -1904,7 +1908,7 @@
       if (rms > thr * 0.6) silenceMs = 0; else silenceMs += ms;
       // uzun cümlə: fasilələrdə kəsmir; yalnız uzun susmadan sonra (ayarlanan müddət) bitir; maksimum 40 saniyə
       var hang = speechMs < 1500 ? Math.min(pauseMs, 450) : speechMs < 3500 ? Math.min(pauseMs, 800) : pauseMs;     // qısa əmrlər tez bitir, uzun cümlələr kəsilmir
-      if (silenceMs > hang || speechMs > 40000) {
+      if (silenceMs > hang || speechMs > 20000) {
         speaking = false;
         var s = speech; speech = []; silenceMs = 0;
         updateVoiceBtn(busy ? 'send' : 'idle');
@@ -2199,16 +2203,16 @@
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); });
   }
   // Utterance bitəndə: yerli nəticə gəlibsə Gemini-yə göndərmə; sadə əmr deyilsə dərhal göndər; heç nə gəlməyibsə qısa gözlə
-  var wakeChecks = [], dbg = { utt: 0, cloud: 0, named: 0, last: '', err: '' };
+  var wakeChecks = [], dbg = { utt: 0, cloud: 0, named: 0, last: '', err: '', tr: 0, rt: 0 };
   function cloudWake(wav) {                                                           // yerli tanıma yoxdur: yuxuda ən çox 10 qısa yoxlama / dəqiqə
     if (isRateLimited) { apiStats.skipped++; updateApiInfo(); return; }
     if (Date.now() < activeUntil) { handleWav(wav); return; }                          // oyaqdır: əmr birbaşa Gemini-yə
     var sec = (wav.size - 44) / 32000, now = Date.now(), began = uttBegan;
     wakeChecks = wakeChecks.filter(function (t) { return now - t < 60000; });
     if (sec > 4 || wakeChecks.length >= 5) { apiStats.skipped++; updateApiInfo(); return; }   // uzun danışıq / limit: yoxlama yoxdur
-    wakeChecks.push(now); dbg.cloud++;
+    wakeChecks.push(now); dbg.cloud++; var tq0 = Date.now();
     transcribe(wav, true).catch(function (e) { dbg.err = (e && e.message ? e.message : String(e)).slice(0, 60); return ''; }).then(function (txt) {
-      dbg.last = String(txt || '').slice(0, 40);
+      dbg.tr = Date.now() - tq0; dbg.last = String(txt || '').slice(0, 40);
       if (!txt || !hasWake(txt)) { apiStats.skipped++; updateApiInfo(); return; }        // ad yoxdur: tam atılır
       dbg.named++;
       onLocalText([txt]);                                                              // ad var: oyan; sadə əmr / salam yerli işlənir
