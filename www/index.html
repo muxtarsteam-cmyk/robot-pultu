@@ -544,6 +544,7 @@
   //  DANIŞIQ (TTS)
   // =====================================================================
   var isSpeaking = false, ttsBusyUntil = 0, ttsUnlocked = false, ttsVoices = [], voiceWarned = false;
+  var ackPending = false, lastSpeakEndAt = 0, ttsStarted = false;      // v38: ackPending = yalnız "Ziko" çağırışından sonra əmr pəncərəsi; ttsStarted = səs həqiqətən başlayıb
   function loadVoices() { try { ttsVoices = speechSynthesis.getVoices() || []; } catch (e) {} }
   if ('speechSynthesis' in window) { loadVoices(); try { speechSynthesis.onvoiceschanged = loadVoices; } catch (e) {} }
   // Brauzerin avtomatik səs bloku: ilk toxunuşda səs sintezini "oyadırıq"
@@ -647,7 +648,7 @@
         curAudio = a; a.preload = 'auto';
         a.src = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=az&q=' + encodeURIComponent(chunks[i]);
         to = setTimeout(function () { a.onerror = null; a.onended = null; try { a.pause(); } catch (e) {} fail(); }, 8000);
-        a.onplaying = function () { started = true; onlineFails = 0; clearTimeout(to); };
+        a.onplaying = function () { started = true; ttsStarted = true; onlineFails = 0; clearTimeout(to); };
         a.onended = function () { clearTimeout(to); i++; next(); };
         a.onerror = function () { clearTimeout(to); fail(); };
         var p = a.play();
@@ -661,6 +662,7 @@
   function speakDevice(text, lang) {
     return new Promise(function (resolve) {
       var done = false, plugin = window.TTS && typeof window.TTS.speak === 'function';
+      ttsStarted = true;                                                          // cihaz səsi son ehtiyatdır: gözləmə nəzarəti bunu dayandırmır
       var guard = setTimeout(fin, 2000 + text.length * 95);
       function fin() { if (done) return; done = true; clearTimeout(guard); resolve(); }
       function viaWeb() {
@@ -764,7 +766,7 @@
       function end(v) { if (settled) return; settled = true; try { URL.revokeObjectURL(url); } catch (e) {} resolve(v); }
       curAudio = a;
       var startTo = setTimeout(function () { try { a.pause(); } catch (e) {} end(false); }, 10000), lenTo = null;
-      a.onplaying = function () { clearTimeout(startTo); };
+      a.onplaying = function () { clearTimeout(startTo); ttsStarted = true; };
       a.onloadedmetadata = function () { if (isFinite(a.duration)) lenTo = setTimeout(function () { try { a.pause(); } catch (e) {} end(true); }, (a.duration + 4) * 1000); };
       a.onended = function () { clearTimeout(startTo); clearTimeout(lenTo); end(true); };
       a.onerror = function () { clearTimeout(startTo); clearTimeout(lenTo); end(false); };
@@ -798,7 +800,9 @@
   function endSpeakState(delay) {
     isSpeaking = false; ttsBusyUntil = Date.now() + delay;
     setTimeout(function () { if (!isSpeaking) muteMic(false); }, delay + 60);   // səs bitdi: yalnız indi dinləməyə keç
-    if (convo) activeUntil = Date.now() + AWAKE_MS;
+    lastSpeakEndAt = Date.now();
+    if (ackPending) { ackPending = false; activeUntil = Date.now() + AWAKE_MS; }   // yalnız "Bəli, dinləyirəm" cavabından sonra bir əmr gözlənir
+    else convo = false;                                                            // adi cavabdan sonra oyaq QALMIR: səs-küy / əks-səda yeni cavab doğurmur
     if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle');
   }
   function logChat(who, text) { chatLog.push(who + ': ' + String(text).slice(0, 120)); if (chatLog.length > 4) chatLog.shift(); }
@@ -812,20 +816,24 @@
     if (ttsEngine !== 'auto' || !apiKey || isRateLimited || Date.now() < gttsPause) return;
     geminiTTS(normalizeSpeech('Bəli, necə kömək edə bilərəm?', false));                // ən çox deyilən cümlə hazır olsun
   }
-  async function speak(text) {
+  async function speak(text, devOnly) {
     text = String(text || '');
     botLine.textContent = '🤖 ' + text;
     stopSpeech();
     var token = speakToken;
-    lastSpokenNorm = norm(text).slice(-500); logChat('Ziko', text);
-    var maxMs = Math.min(240000, 15000 + text.length * 110);                       // mətnin uzunluğuna görə: qısa cavab donarsa ≤ 30 san sonra mikrofon açılır
+    lastSpokenNorm = norm(text).slice(-500); if (!devOnly) logChat('Ziko', text);
+    var maxMs = Math.min(240000, (text.length < 80 ? 6000 : 15000) + text.length * 110);                       // mətnin uzunluğuna görə: qısa cavab donarsa ≤ 30 san sonra mikrofon açılır
     isSpeaking = true; ttsBusyUntil = Date.now() + maxMs; muteMic(true);
     var wd = setTimeout(function () { if (token === speakToken) { stopSpeech(); endSpeakState(500); } }, maxMs);   // heç vaxt donub qalmasın
     if (voiceOn) updateVoiceBtn('say');
+    ttsStarted = !!devOnly;
+    var fsw = setTimeout(function () {                                              // 5-9 san ərzində səs başlamadı: bulud səsini burax, telefon səsi ilə dərhal danış (mikrofon uzun müddət bağlı qalmasın)
+      if (token === speakToken && !ttsStarted) { gttsPause = Date.now() + 60000; clearTimeout(wd); speak(text, true); }
+    }, text.length < 120 ? 5000 : 9000);
     try {
       var played = false, clean = normalizeSpeech(text, false), online = navigator.onLine !== false;
       var quick = ttsEngine === 'fast' && clean.length <= 220;                      // qısa cavab: Gemini/Google səsini gözləmə
-      if (clean && ttsEngine !== 'device' && !quick && online) {
+      if (clean && ttsEngine !== 'device' && !quick && online && !devOnly) {
         if ((ttsEngine === 'auto' || ttsEngine === 'fast' || (ttsEngine === 'save' && clean.length > 90)) && apiKey && Date.now() >= gttsPause) played = await playGemini(ttsChunks(clean), token);
         if (!played && token === speakToken && onlineFails < 3) played = await playOnline(splitChunks(clean, 180), token);
       }
@@ -836,7 +844,7 @@
         for (var di = 0; di < dch.length && token === speakToken; di++) await speakDevice(dch[di], lang);
       }
     } catch (e) {}
-    clearTimeout(wd);
+    clearTimeout(wd); clearTimeout(fsw);
     if (token === speakToken) endSpeakState(700);
   }
   $('ttsTest').addEventListener('click', function () { unlockTTS(); speak(robotName ? 'Salam! Mən robotam, adım ' + robotName + '. Səsim eşidilir.' : 'Salam! Səsim eşidilir.'); });
@@ -1788,15 +1796,17 @@
       '- "look": the user asks what the robot sees in general / to look around / asks something else about the view ("nə görürsən?", "ətrafa bax"). Put the question in "question" or null.\n' +
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
       '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, at most 2 short sentences, plain text without markdown or emoji, and put it in "answer".\n' +
-      '- "none": noise, silence, or speech not addressed to the robot.\n' +
+      '- "none": noise, silence, music, TV or background chatter, or speech not addressed to the robot. If there is no clear human speech, reply {"heard":"","called":false,"intent":"none"}. NEVER invent words that were not clearly spoken; NEVER write the robot name unless it is clearly spoken.\n' +
       'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
   }
 
   async function transcribe(wav, wake) {
     var b64 = await blobToBase64(wav);
-    var hint = wake ? ' The speaker may call a small robot named "' + (robotName || 'robot') + '" (spelling may vary slightly). If you hear that name, write it exactly as "' + (robotName || 'robot') + '". If the audio has no clear speech, output nothing.' : '';
-    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text.' + hint }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true, timeout: wake ? 6000 : 10000 });
-    return t.trim();
+    var hint = wake ? ' The speaker may call a small robot named "' + (robotName || 'robot') + '" (spelling may vary slightly). Include that name ONLY if it is CLEARLY spoken; never add it otherwise.' : '';
+    var t = await gemini([{ text: 'TASK:TRANSCRIBE\nWrite down exactly what is said in this audio (Azerbaijani). Output only the text. If there is no clear human speech (silence, noise, music, hum), output exactly: NONE. Never guess or invent words.' + hint }, audioPart(b64)], { maxTokens: 150, nosys: true, fast: true, timeout: wake ? 6000 : 10000 });
+    t = String(t || '').trim();
+    if (/^\W*none\W*$/i.test(t)) return '';
+    return t;
   }
 
   // Nağıl / uzun mətn: orijinal səs yazısı Gemini-yə tam göndərilir, cavab uzun olur və hissə-hissə oxunur
@@ -1820,11 +1830,13 @@
     if (!r) { lastVoice.textContent = String(t).slice(0, 24) || '—'; return; }
     lastVoice.textContent = String(r.heard || '—').slice(0, 140);
     var hn = norm(r.heard);
-    if (hn.length >= 8 && lastSpokenNorm && lastSpokenNorm.indexOf(hn) >= 0) return;                 // öz səsinin əksi
+    if (isJunkTranscript(r.heard)) return;                                                           // v38: boş / uydurma mətn (səssizlikdə Gemini-nin "halüsinasiyası")
+    if ((hn.length >= 8 && lastSpokenNorm && lastSpokenNorm.indexOf(hn) >= 0) || isEcho(r.heard)) return;   // öz səsinin əksi
     if (hn && hn === lastHeardN && Date.now() - lastHeardT < 4000) return;                           // eyni cümlənin təkrarı
     lastHeardN = hn; lastHeardT = Date.now();
     var intent = r.intent || 'none', needName = !(!STOP_NEEDS_NAME && (intent === 'stop' || (intent === 'drive' && r.drive === 'S')));
-    if (needName && !(active || (wakeCloud && !localOn && r.called))) return;                                                       // yerli ad yoxlaması keçməyibsə Gemini-nin "called" cavabına inanma
+    if (needName && !(active || (wakeCloud && !localOn && r.called && hasWake(r.heard)))) return;   // v38: Gemini-nin "called" cavabına tək inanma: ad mətndə də olmalıdır
+    var wm = wav && wav.meta; if (needName && wm && (wm.voicedMs < 350 || wm.snr < 3.5)) return;       // v38: real nitq izi yoxdursa (səs-küy) əmr sayılmır                                                       // yerli ad yoxlaması keçməyibsə Gemini-nin "called" cavabına inanma
     if (mission && intent !== 'stop' && !(intent === 'drive' && (r.drive === 'S' || mission.timed))) return;   // tapşırıq gedir (hərəkət əmri istisna)
     if ((acting && intent !== 'stop' && !(intent === 'drive' && r.drive === 'S'))) return;           // başqa əməliyyat gedir
     if (intent === 'call') { activeUntil = Date.now() + AWAKE_MS; convo = true; }   // yalnız ad: bir əmr gözləyir
@@ -1837,8 +1849,8 @@
     switch (intent) {
       case 'stop': abortMission(); send('S'); note(''); break;
       case 'drive': if (!dupDrive(r)) await doDrive(r); break;
-      case 'call': if (Date.now() - lastGreetT > 4000) { lastGreetT = Date.now(); speak('Bəli, necə kömək edə bilərəm?').catch(function () {}); } break;
-      case 'ask': if (r.answer) speak(String(r.answer)).catch(function () {}); break;
+      case 'call': if (Date.now() - lastGreetT > 4000) { lastGreetT = Date.now(); ackPending = true; speak('Bəli, necə kömək edə bilərəm?').catch(function () {}); } break;
+      case 'ask': if (r.answer && hn.split(' ').filter(Boolean).length >= 2) speak(String(r.answer)).catch(function () {}); break;
       case 'long': await longReply(b64, r.heard); break;
       case 'remember': await rememberSubject(r.name, r.kind); break;
       case 'correct': await rememberSubject(r.name, r.kind || 'person', r.old || lastIdentified); break;
@@ -1861,7 +1873,7 @@
     if (pcm.length < 16000 * 0.3) { apiStats.skipped++; updateApiInfo(); return; }                    // çox qısa səs-küy: API-yə göndərmə
     var e2 = 0, k2; for (k2 = 0; k2 < pcm.length; k2 += 8) e2 += pcm[k2] * pcm[k2]; if (Math.sqrt(e2 / (pcm.length / 8)) < 0.012) { apiStats.skipped++; updateApiInfo(); return; }   // demək olar ki, səssiz
     if (pcm.length > 16000 * 20) pcm = pcm.subarray(0, 16000 * 20);                // çox qısa səs-küy
-    var wav = toWav(pcm, 16000); wav.t0 = Date.now();
+    var wav = toWav(pcm, 16000); wav.t0 = Date.now(); wav.meta = uttMeta;
     if (replyWaiter) {                                    // robot sual verib, cavab gözləyir
       var w = replyWaiter; replyWaiter = null; clearTimeout(w.t);
       busy++; updateVoiceBtn('send');
@@ -1879,89 +1891,160 @@
     var wdRel = setTimeout(function () { release(); }, 7000);
     function release() { if (rel) return; rel = true; clearTimeout(wdRel); routingBusy = false; var nx = pendingWav; pendingWav = null; if (nx) setTimeout(function () { handleWav(nx); }, 0); }
     routeUtterance(wav, release).catch(function (e) {
-      warn(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?');
+      warn(e && e.message ? e.message : 'Şəbəkə xətası. İnternet var?', true);   // v38: heç kim çağırmayıb: xəta ekranda yazılır, robot DANIŞMIR
     }).then(function () {
       busy--; release();
       micUpdate(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
     });
   }
 
+  // =====================================================================
+  //  v38: YENİ MİKROFON + NİTQ AŞKARLAMA (VAD)
+  //  - səs-küy / sakitlikdə yalançı başlanğıc yoxdur (3 ardıcıl nitq kadrı + tezlik yoxlaması)
+  //  - səs-küy səviyyəsi avtomatik izlənir, AGC söndürülüb (sakitlik gücləndirilib "səsə" çevrilmir)
+  //  - mikrofon donarsa / sistem götürərsə özü yenidən açılır
+  // =====================================================================
+  var lastChunkAt = 0, lastSoundAt = 0, lastSpeechEndAt = 0, uttMeta = null, onsetN = 0, voicedMs = 0, peakRms = 0;
   function onAudio(e) {
     if (!voiceOn || !ctx) return;
+    lastChunkAt = Date.now();
     processChunk(new Float32Array(e.inputBuffer.getChannelData(0)), ctx.sampleRate);
+  }
+  function resetVad() { speaking = false; speech = []; preRoll = []; onsetN = 0; voicedMs = 0; peakRms = 0; silenceMs = 0; speechMs = 0; }
+  function finishUtterance() {
+    var s = speech, meta = { voicedMs: voicedMs, peak: peakRms, dens: speechMs ? voicedMs / speechMs : 0, snr: noise > 0 ? peakRms / noise : 99, dur: speechMs };
+    speaking = false; speech = []; silenceMs = 0; onsetN = 0; lastSpeechEndAt = Date.now();
+    if (!s.length) return;
+    if (meta.voicedMs < 280 || meta.dens < 0.18 || meta.snr < 3) {                 // nitq deyil: tıqqıltı, küy, nəfəs
+      apiStats.skipped++; updateApiInfo(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle'); return;
+    }
+    uttMeta = meta;
+    if (Date.now() < activeUntil && voiceOn && !isSpeaking) updateVoiceBtn('send');    // əmr gözlənilirdi: ekran dərhal "emal edilir" göstərsin (donmuş görünməsin)
+    else if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
+    handleUtterance(s);
+    setTimeout(function () { if (voiceOn && !isSpeaking && !busy && !routingBusy && !acting) updateVoiceBtn('idle'); }, 2600);
   }
   function processChunk(chunk, rate) {
     if (!voiceOn || isRateLimited) return;
     if (micMode === 'ptt') { if (pttHeld && micOpen()) { curRate = rate; pttBuf.push(chunk); } return; }
-    if (!micOpen()) { speaking = false; speech = []; preRoll = []; return; }   // robot danışarkən heç nə qəbul edilmir
+    if (!micOpen()) { if (speaking || speech.length || preRoll.length) resetVad(); return; }   // robot danışarkən heç nə qəbul edilmir
     curRate = rate;
-    var sum = 0, i; for (i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
-    var rms = Math.sqrt(sum / chunk.length), ms = chunk.length / rate * 1000;
-    var thr = Math.max(0.025, noise * 3.5);
+    var n = chunk.length, sum = 0, zc = 0, sgn = 0, i, x, s2;
+    for (i = 0; i < n; i++) {
+      x = chunk[i]; sum += x * x;
+      s2 = x > 0.002 ? 1 : x < -0.002 ? -1 : 0;
+      if (s2 !== 0) { if (sgn !== 0 && s2 !== sgn) zc++; sgn = s2; }
+    }
+    var rms = Math.sqrt(sum / n), ms = n / rate * 1000, crHz = zc * rate / (2 * n);
+    var floor = Math.max(0.018, noise * 4);
+    var voiced = rms > floor && crHz > 70 && crHz < 6500;                          // insan nitqi diapazonu: aşağı uğultu və yüksək "şırıltı" nitq sayılmır
+    if (rms > Math.max(0.010, noise * 2.5)) lastSoundAt = Date.now();               // ətrafda həqiqətən səs var (yerli tanıyıcının "xəyali" mətnini süzmək üçün)
     if (!speaking) {
-      noise = noise * 0.97 + rms * 0.03;
-      preRoll.push(chunk); if (preRoll.length > 8) preRoll.shift();
-      if (rms > thr) { speaking = true; uttBegan = Date.now() - 500; speech = preRoll.slice(); preRoll = []; silenceMs = 0; speechMs = 0; if (Date.now() < activeUntil) updateVoiceBtn('talk'); }
+      noise = rms < noise ? noise * 0.9 + rms * 0.1 : noise * 0.995 + Math.min(rms, floor) * 0.005;   // sürətlə düşür, yavaş yüksəlir
+      noise = Math.min(0.05, Math.max(0.0015, noise));
+      preRoll.push(chunk); if (preRoll.length > 10) preRoll.shift();
+      if (voiced) onsetN++; else if (onsetN > 0) onsetN--;
+      if (onsetN >= 3) {                                                           // 3 nitq kadrı: tək tıqqıltı / küy başlanğıc deyil
+        speaking = true; uttBegan = Date.now() - 500; speech = preRoll.slice(); preRoll = [];
+        silenceMs = 0; speechMs = 0; voicedMs = 0; peakRms = rms; onsetN = 0;
+        if (Date.now() < activeUntil) updateVoiceBtn('talk');
+      }
     } else {
       speech.push(chunk); speechMs += ms;
-      // danışıq zamanı həssaslıq artır (cümlənin sonundakı yumşaq hecalar susma sayılmasın)
-      if (rms > thr * 0.6) silenceMs = 0; else silenceMs += ms;
-      // uzun cümlə: fasilələrdə kəsmir; yalnız uzun susmadan sonra (ayarlanan müddət) bitir; maksimum 40 saniyə
+      if (voiced) { voicedMs += ms; if (rms > peakRms) peakRms = rms; lastSpeechEndAt = Date.now(); }
+      if (rms > floor * 0.7) silenceMs = 0; else silenceMs += ms;
+      if (speechMs > 6000 && voicedMs / speechMs < 0.12) { resetVad(); return; }    // fasiləsiz küy (fen, televizor): at
       var hang = speechMs < 1500 ? Math.min(pauseMs, 450) : speechMs < 3500 ? Math.min(pauseMs, 800) : pauseMs;     // qısa əmrlər tez bitir, uzun cümlələr kəsilmir
-      if (silenceMs > hang || speechMs > 20000) {
-        speaking = false;
-        var s = speech; speech = []; silenceMs = 0;
-        updateVoiceBtn(busy ? 'send' : 'idle');
-        handleUtterance(s);
-      }
+      if (silenceMs > hang || speechMs > 20000) finishUtterance();
     }
   }
 
   function micPermission(cb) { permAsync(PERM_MIC).then(cb); }
 
-  // ---- Mikrofon: WebView getUserMedia (MODIFY_AUDIO_SETTINGS icazəsi ilə) ----
-  var warmT = null;
+  // ---- Mikrofon: WebView getUserMedia + özünü bərpa edən nəzarət ----
+  var warmT = null, micStarting = false, micRestarting = false, micRestartAt = 0, micRestartCount = 0, micMuteTicks = 0;
   function warmApi() {                                                               // yüngül sorğu: bağlantı açıq qalır, ilk əsl sorğu gecikmir (generateContent limitinə sayılmır)
     if (!apiKey || !voiceOn || isRateLimited || navigator.onLine === false) return;
     try { fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=' + encodeURIComponent(apiKey), { method: 'GET' }).catch(function () {}); } catch (e) {}
   }
-  function startGemini() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { warn('Mikrofon bu mühitdə dəstəklənmir'); return; }
+  function startGemini(isRestart) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { warn('Mikrofon bu mühitdə dəstəklənmir', true); return; }
+    if (micStarting) return;
+    micStarting = true;
     micPermission(function (ok) {
-      if (!ok) { warn('Mikrofon icazəsi yoxdur. Ayarlar, Tətbiqlər, Robot Pultu, İcazələr, Mikrofon.'); return; }
+      if (!ok) { micStarting = false; warn('Mikrofon icazəsi yoxdur. Ayarlar, Tətbiqlər, Robot Pultu, İcazələr, Mikrofon.', true); return; }
       var gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices), tries = 0;
+      var CONS = [{ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } },   // AGC YOX: sakitlik "səsə" çevrilmir
+                  { audio: true },
+                  { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }];
       function attempt() {
         tries++;
-        var c = (tries % 2) ? { audio: true } : { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
-        return gum(c).catch(function (e) {
-          if (tries >= 4) throw e;
-          note('Mikrofon cəhdi ' + tries + '/4 ...');
-          return sleep(900).then(attempt);
+        return gum(CONS[(tries - 1) % CONS.length]).catch(function (e) {
+          if (tries >= 5) throw e;
+          note('Mikrofon cəhdi ' + tries + '/5 ...');
+          return sleep(700).then(attempt);
         });
       }
-      note('Mikrofon açılır...');
+      if (!isRestart) note('Mikrofon açılır...');
       attempt().then(function (st) {
         stream = st;
+        try { st.getAudioTracks().forEach(function (t) { t.onended = function () { lastChunkAt = 1; }; }); } catch (e) {}
         var AC = window.AudioContext || window.webkitAudioContext;
         ctx = new AC();
+        try { ctx.onstatechange = function () { if (ctx && ctx.state !== 'running' && voiceOn) { try { ctx.resume(); } catch (e) {} } }; } catch (e) {}
+        try { ctx.resume(); } catch (e) {}
         srcNode = ctx.createMediaStreamSource(stream);
         proc = ctx.createScriptProcessor(2048, 1, 1);
         proc.onaudioprocess = onAudio;
         srcNode.connect(proc); proc.connect(ctx.destination);
-        preRoll = []; speech = []; speaking = false; noise = 0.008;
-        voiceOn = true; updateVoiceBtn('idle'); micUpdate(); note(''); setTimeout(prewarmTTS, 1500); setTimeout(startLocal, 600); setTimeout(function () { if (voiceOn && !localOn) note(wakeCloud ? 'Telefonun ad tanıması yoxdur: «' + robotName + '» qısa səslərdə Gemini ilə yoxlanır' : 'Ad tanıma yoxdur: «Basıb saxla» düyməsindən istifadə edin'); }, 2000); warmApi(); clearInterval(warmT); warmT = setInterval(warmApi, 40000);
+        resetVad(); noise = 0.008; lastChunkAt = Date.now(); micMuteTicks = 0;
+        voiceOn = true; micStarting = false; updateVoiceBtn('idle'); micUpdate(); if (!isRestart) note(''); else note('');
+        if (!isRestart) {
+          setTimeout(prewarmTTS, 1500); setTimeout(startLocal, 600);
+          setTimeout(function () { if (voiceOn && !localOn) note(wakeCloud ? 'Telefonun ad tanıması yoxdur: «' + robotName + '» qısa səslərdə Gemini ilə yoxlanır' : 'Ad tanıma yoxdur: «Basıb saxla» düyməsindən istifadə edin'); }, 2000);
+          warmApi(); clearInterval(warmT); warmT = setInterval(warmApi, 40000);
+        }
       }).catch(function (e) {
-        warn('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. İcazələri yoxlayın.');
+        micStarting = false;
+        warn('Mikrofon açılmadı: ' + (e && e.name ? e.name : e) + '. İcazələri yoxlayın.', true);
       });
     });
   }
   function stopGemini() {
     try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
     try { if (srcNode) srcNode.disconnect(); } catch (e) {}
-    try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
-    try { if (ctx) ctx.close(); } catch (e) {}
-    proc = srcNode = stream = ctx = null; speaking = false; speech = []; preRoll = [];
+    try { if (stream) stream.getTracks().forEach(function (t) { t.onended = null; t.stop(); }); } catch (e) {}
+    try { if (ctx) { ctx.onstatechange = null; ctx.close(); } } catch (e) {}
+    proc = srcNode = stream = ctx = null; resetVad();
   }
+  function restartMic() {
+    if (!voiceOn || micRestarting || micStarting) return;
+    micRestarting = true; micRestartAt = Date.now(); micRestartCount++;
+    note('Mikrofon yenidən açılır...');
+    stopGemini();
+    setTimeout(function () { micRestarting = false; if (voiceOn) startGemini(true); }, 450);
+  }
+  // Nəzarətçi: mikrofon dondu / sistem götürdü / AudioContext dayandı / nitq yarımçıq qaldı -> özü düzəldir
+  setInterval(function () {
+    if (!voiceOn || micRestarting || micStarting) return;
+    var now = Date.now();
+    if (!stream || !ctx) {                                                         // mikrofon açılmayıb: bir neçə dəfə yenidən cəhd
+      if (micRestartCount < 6 && now - micRestartAt > 6000) { micRestartAt = now; micRestartCount++; startGemini(true); }
+      return;
+    }
+    if (ctx.state === 'suspended' || ctx.state === 'interrupted') { try { ctx.resume(); } catch (e) {} }
+    var tr = null; try { tr = stream.getAudioTracks()[0]; } catch (e) {}
+    var ended = !tr || tr.readyState === 'ended';
+    if (tr && tr.muted) micMuteTicks++; else micMuteTicks = 0;
+    var stalled = now - lastChunkAt > 3000;
+    if (speaking && now - lastChunkAt > 1500) finishUtterance();                   // nitq yarımçıq qaldı və səs axını kəsildi: donmasın
+    if ((ended || stalled || micMuteTicks >= 4) && now - micRestartAt > 5000) { restartMic(); return; }
+    if (!ended && !stalled && now - micRestartAt > 20000) micRestartCount = 0;      // sağlamdır: sayğacı sıfırla
+    if (busy > 0 && !routingBusy && !acting && !mission && !replyWaiter && !isSpeaking) {   // "düşünür" vəziyyətində ilişib qaldısa
+      busyStuck++; if (busyStuck >= 25) { busy = 0; busyStuck = 0; micUpdate(); updateVoiceBtn('idle'); }
+    } else busyStuck = 0;
+  }, 1000);
+  var busyStuck = 0;
 
   // ---------- Ehtiyat: telefonun səs tanıması (yalnız hərəkət komandaları) ----------
   var LANG = 'az-AZ', errCount = 0;
@@ -2166,23 +2249,54 @@
     for (i = 0; i + 1 < t.length; i++) if (t[i].length <= 3 && t[i + 1].length <= 4 && w[t[i] + t[i + 1]]) return true;   // "zi ko" -> "ziko"
     for (i = 0; i < t.length; i++) {
       if (w[t[i]]) return true;
-      if (isZikoName(rn) && t[i].length >= 3 && t[i].length <= 6 && /^[zsc]/.test(t[i]) && /[ko]$/.test(t[i]) && lev(t[i], 'ziko') <= 2) return true;   // zeyko, zico, sigo ...
-      if (rn.length >= 4 && t[i].length >= 4 && lev(t[i], rn) <= 1) return true;      // uzun adlarda 1 hərf səhvi; qısa adlar ("alo") yalnız dəqiq
+      if (isZikoName(rn) && t[i].length >= 4 && t[i].length <= 5 && /^[zsc]/.test(t[i]) && /[ko]$/.test(t[i]) && lev(t[i], 'ziko') <= 1) return true;   // zeko, zico, sigo: yalnız 1 hərf fərqi (əvvəl 2 idi: təsadüfi sözlər oyadırdı)
+      if (rn.length >= 6 && t[i].length >= 5 && lev(t[i], rn) <= 1) return true;      // yalnız uzun adlarda 1 hərf səhvi; qısa adlar dəqiq olmalıdır
     }
     return false;
+  }
+  // ===== v38: uydurma mətn / əks-səda / ad süzgəcləri =====
+  var JUNK_PHRASES = /(altyaz|abun[əe] ol|izl[əe]diyin|thanks for watching|thank you for watching|subtitle|subscribe|amara\.org|www\.|продолжение следует|субтитры|спасибо за просмотр|музыка)/i;
+  function isJunkTranscript(t) {                                                      // boş, durğu işarəsi, "NONE", YouTube-tipli halüsinasiya, eyni sözün təkrarı
+    t = String(t == null ? '' : t).trim();
+    if (t.length < 2) return true;
+    if (/^[\s.,!?…\-–_*\[\]()]*$/.test(t)) return true;
+    if (/^\W*(none|null|nan|undefined|silence|noise|music|musiqi|səssizlik)\W*$/i.test(t)) return true;
+    if (JUNK_PHRASES.test(t)) return true;
+    var w = norm(t).split(' ').filter(Boolean); if (!w.length) return true;
+    if (w.length >= 4) { var u = {}, k = 0, j; for (j = 0; j < w.length; j++) if (!u[w[j]]) { u[w[j]] = 1; k++; } if (k <= Math.ceil(w.length / 4)) return true; }
+    return false;
+  }
+  function isEcho(text) {                                                             // robotun öz sözləri mikrofona qayıdıbsa
+    if (!lastSpokenNorm) return false;
+    var since = isSpeaking ? 0 : Date.now() - lastSpeakEndAt;
+    var t = norm(text).split(' ').filter(Boolean); if (t.length < 2) return false;
+    if (t.length === 2) return since < 2500 && lastSpokenNorm.indexOf(t.join(' ')) >= 0;
+    var spoken = {}, hit = 0; lastSpokenNorm.split(' ').forEach(function (w) { spoken[w] = 1; });
+    t.forEach(function (w) { if (spoken[w]) hit++; });
+    return since < 8000 && hit / t.length >= 0.8;
+  }
+  function wakeInMatches(m) {                                                         // ad ya 1-ci variantda, ya da ən azı 2 variantda olmalıdır (5 variantdan birində təsadüfən yox)
+    var c = 0, top = false, k;
+    for (k = 0; k < m.length && k < 4; k++) if (hasWake(m[k])) { c++; if (k === 0) top = true; }
+    return top || c >= 2;
   }
   function onLocalText(matches) {
     if (!voiceOn) return;
     var talking = isSpeaking || Date.now() < ttsBusyUntil;                           // robot danışır: salam/söhbət qəbul edilmir, amma hərəkət əmri keçir
+    if (!talking) {
+      if (!speaking && Date.now() - lastSoundAt > 6500) return;                      // v38: son saniyələrdə ətrafda səs olmayıb: tanıyıcının "xəyali" mətni atılır
+      matches = (matches || []).filter(function (m) { return !isJunkTranscript(m) && !isEcho(m); });
+      if (!matches.length) return;
+    }
     if (!talking) localSeenAt = Date.now();
-    if (!talking) { for (var wi = 0; wi < matches.length; wi++) if (hasWake(matches[wi])) { wakeUp(); convo = false; break; } }   // Ziko çağırıldı: robot ayıldı (bu cümlədəki əmr üçün)
+    if (!talking && wakeInMatches(matches)) { wakeUp(); convo = false; }   // Ziko çağırıldı: robot ayıldı (bu cümlədəki əmr üçün)
     var cmd = null, heard = '';
     for (var gi = 0; gi < matches.length && !talking && Date.now() < activeUntil; gi++) {
       var gr = localChat(matches[gi]);
       if (gr) {
         localHandledAt = Date.now(); if (Date.now() - lastGreetT < 4000) return; lastGreetT = Date.now();
         var onlyName = gr === 'Bəli, dinləyirəm.';                                    // yalnız "Ziko": əmr gözlə; "Ziko salam": cavab ver, yuxuya get
-        if (onlyName) { activeUntil = Date.now() + AWAKE_MS; convo = true; } else goSleep();
+        if (onlyName) { activeUntil = Date.now() + AWAKE_MS; convo = true; ackPending = true; } else goSleep();
         lastVoice.textContent = matches[gi] + ' ⚡'; logChat('İstifadəçi', matches[gi]); apiStats.local++; updateApiInfo();
         speak(gr); return;
       }
@@ -2207,13 +2321,14 @@
   function cloudWake(wav) {                                                           // yerli tanıma yoxdur: yuxuda ən çox 10 qısa yoxlama / dəqiqə
     if (isRateLimited) { apiStats.skipped++; updateApiInfo(); return; }
     if (Date.now() < activeUntil) { handleWav(wav); return; }                          // oyaqdır: əmr birbaşa Gemini-yə
+    var wm = wav.meta; if (wm && (wm.voicedMs < 450 || wm.snr < 4 || wm.dens < 0.25)) { apiStats.skipped++; updateApiInfo(); return; }   // v38: kifayət qədər real nitq yoxdursa Gemini-yə HEÇ NƏ getmir
     var sec = (wav.size - 44) / 32000, now = Date.now(), began = uttBegan;
     wakeChecks = wakeChecks.filter(function (t) { return now - t < 60000; });
     if (sec > 4 || wakeChecks.length >= 5) { apiStats.skipped++; updateApiInfo(); return; }   // uzun danışıq / limit: yoxlama yoxdur
     wakeChecks.push(now); dbg.cloud++; var tq0 = Date.now();
     transcribe(wav, true).catch(function (e) { dbg.err = (e && e.message ? e.message : String(e)).slice(0, 60); return ''; }).then(function (txt) {
       dbg.tr = Date.now() - tq0; dbg.last = String(txt || '').slice(0, 40);
-      if (!txt || !hasWake(txt)) { apiStats.skipped++; updateApiInfo(); return; }        // ad yoxdur: tam atılır
+      if (!txt || isJunkTranscript(txt) || isEcho(txt) || !hasWake(txt)) { apiStats.skipped++; updateApiInfo(); return; }        // ad yoxdur / uydurma / əks-səda: tam atılır
       dbg.named++;
       onLocalText([txt]);                                                              // ad var: oyan; sadə əmr / salam yerli işlənir
       if (localHandledAt >= began) return;
@@ -2241,7 +2356,7 @@
       var alive = Date.now() - localSeenAt < 30000;                                   // telefon tanıması son vaxtlar mətn qaytarıb?
       if (Date.now() - t0 >= (awake ? 800 : alive ? 2200 : 1000)) {                   // yerli mətn gəlmədi
         if (awake) { handleWav(wav); return; }
-        if (wakeCloud) { cloudWake(wav); return; }                                    // tanıma səssizdir: ad qısa yoxlama ilə (limitli)
+        if (wakeCloud && !alive) { cloudWake(wav); return; }                          // v38: yerli tanıma işləyir, amma bu səsdə söz eşitməyib = nitq deyil: bulud yoxlaması YOXDUR
         apiStats.skipped++; updateApiInfo(); return;
       }
       setTimeout(waitLocal, 25);
@@ -2299,7 +2414,7 @@
       e.preventDefault(); if (!pttHeld) return;
       pttHeld = false; micUpdate(); pb.textContent = '🗣 Basıb saxla və danış';
       var buf = pttBuf; pttBuf = [];
-      if (buf.length) { activeUntil = Date.now() + AWAKE_MS; convo = true; handleUtterance(buf); }
+      if (buf.length) { activeUntil = Date.now() + AWAKE_MS; convo = true; uttMeta = null; handleUtterance(buf); }
     }
     pb.addEventListener('pointerdown', down); pb.addEventListener('pointerup', up); pb.addEventListener('pointercancel', up); pb.addEventListener('pointerleave', up);
   })();
@@ -2329,6 +2444,7 @@
     askPermissions(function () { setTimeout(autoStartVoice, 1200); });   // APK-da özü dinləməyə başlayır
   }, false);
   document.addEventListener('pause', function () { abortMission(); if (connected) send('S'); if (voiceOn) stopVoice(); stopCamera(); }, false);
+  document.addEventListener('resume', function () { setTimeout(autoStartVoice, 700); }, false);   // v38: tətbiqə qayıdanda mikrofon özü açılır (istifadəçi özü söndürməyibsə)
 
   setTimeout(function () {
     if (!window.cordova) note('Bu fayl yalnız qurulmuş APK daxilində Bluetooth ilə işləyir.');
@@ -2344,7 +2460,7 @@
     ttsTest: function () { return speak('Test'); }, norm: normalizeSpeech, split: splitChunks, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v37 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v38 ✓';
 })();
 </script>
 </body>
