@@ -1747,12 +1747,17 @@
 
   // ---------- loglar ----------
   function stamp() { var d = new Date(); function p(n) { return (n < 10 ? '0' : '') + n; } return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
+  var LOG_MAX = 2;                                                                   // hər siyahıda ən çox 2 sətir: yenisi gələndə köhnələr silinir
   function addLine(boxId, cls, text) {
     var box = $(boxId), el = document.createElement('div'), t = document.createElement('span');
     el.className = 'l ' + cls; t.className = 't'; t.textContent = stamp();
     el.appendChild(t); el.appendChild(document.createTextNode(text));
+    if (box.children.length >= LOG_MAX) {                                      // siyahı dolub: özü təmizlənir (çox sətir ekranı donduruyur)
+      box.innerHTML = '';
+      if (boxId === 'chatBox') chatLog = chatLog.slice(-4);                    // robot söhbətin ipini itirməsin: son 4 mesaj yaddaşda qalır
+      else { heardLines = []; overheard = overheard.slice(-3); }
+    }
     box.appendChild(el);
-    while (box.children.length > 200) box.removeChild(box.firstChild);
     box.scrollTop = box.scrollHeight;
   }
   function chatLine(cls, text) { addLine('chatBox', cls, text); }
@@ -2293,6 +2298,6 @@
     ttsTest: function () { return speak('Test'); }, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v40 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v42 ✓';
 })();
 </script>
