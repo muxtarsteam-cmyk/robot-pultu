@@ -835,7 +835,7 @@
     if (f.length > 100) { var m = /^([\s\S]{40,100}?[.!?;:,])\s+([\s\S]*)$/.exec(f); if (m) return [m[1]].concat(m[2] ? [m[2]] : [], a.slice(1)); }
     return a;
   }
-  var ACKS = ['Bəli, dinləyirəm.', 'Buyur.', 'Hə, de görüm.'], lastAck = -1;
+  var ACKS = ['Bəli.', 'Bəli, eşidirəm.', 'Bəli, buradayam.'], lastAck = -1;
   function prewarmTTS() {
     if (VS.voice === 'device' || !VS.speakOn || !apiKey || Date.now() < gttsPause) return;
     ACKS.forEach(function (t, i) {
@@ -1949,10 +1949,20 @@
       chatLine('bot', out); remember('Robot', out); speak(out, 'chat').catch(function () {});
     } catch (e) { warn(e && e.message ? e.message : 'Xəta', true); chatLine('sys', e && e.message ? e.message : 'Xəta'); } finally { busy--; micUpdate(); }
   }
-  function ack() {
-    var i; do { i = Math.floor(Math.random() * ACKS.length); } while (i === lastAck && ACKS.length > 1);
-    lastAck = i; var t = ACKS[i];
-    chatLine('bot', t); remember('Robot', t); speak(t, 'ack').catch(function () {});
+  function ack(t) {                                                                   // adı çəkəndə qısa cavab. Ardınca gözləmə YOXDUR: yalnız "sistem işləyir" siqnalıdır
+    t = t || 'Bəli.';
+    activeUntil = 0;
+    chatLine('bot', t); remember('Robot', t); speak(t, null).catch(function () {});
+  }
+  function quickReply(rest) {                                                         // yalnız ad / "məni eşidirsən?" tipli yoxlama: Gemini-siz dərhal cavab
+    var n = norm(rest); if (n.length < 2) return 'Bəli.';
+    var t = n.split(' ').filter(Boolean), i, hear = false, live = false;
+    if (t.length > 4) return '';
+    for (i = 0; i < t.length; i++) {
+      if (/^esid/.test(t[i]) || t[i] === 'qulaq') hear = true;
+      if (/^(varsan|varsiz|buradasan|buradasiniz|oyaqsan|oyaqsiniz|yatmisan|yuxudasan|isleyirsen|isleyirsiz)$/.test(t[i])) live = true;
+    }
+    return hear ? 'Bəli, eşidirəm.' : live ? 'Bəli, buradayam.' : '';
   }
 
   // ---------- Əmrlərin işlənməsi ----------
@@ -2039,9 +2049,10 @@
     if (!called && !active && !stopWord) { lastVoice.textContent = text.slice(0, 140); heardLog(text); pushOverheard(text); return; }       // çağırılmayıb: yalnız yazılır
     if (!called && !stopWord && meta && (meta.voicedMs < 350 || meta.snr < 3.5)) return;                                                       // real nitq izi yoxdur
     var restTxt = called ? stripName(text) : text;
-    if (called && norm(restTxt).length < 2 && !stopWord) {                                                                                    // yalnız ad: Gemini-yə ikinci sorğu getmir, dərhal cavab
+    var qr = (called && !stopWord) ? quickReply(restTxt) : '';
+    if (qr) {                                                                                                                                // yalnız ad və ya "eşidirsən?": Gemini-yə ikinci sorğu getmir, dərhal cavab
       var hn0 = norm(text); if (hn0 && hn0 === lastHeardN && Date.now() - lastHeardT < 4000) return;
-      lastHeardN = hn0; lastHeardT = Date.now(); lastVoice.textContent = text.slice(0, 140); chatLine('me', text); remember('İstifadəçi', text); activeUntil = 0; ack(); return;
+      lastHeardN = hn0; lastHeardT = Date.now(); lastVoice.textContent = text.slice(0, 140); chatLine('me', text); remember('İstifadəçi', text); ack(qr); return;
     }
     if (!tr.clear && !stopWord && norm(stripName(text)).length >= 3) { lastVoice.textContent = text.slice(0, 140) + ' (?)'; chatLine('me', text + ' (?)'); if (!(acting || mission)) askRepeat(); return; }   // əmin deyil: tapmır, soruşur
     var lc = localSimpleCommand(text);                                                                                                       // sadə hərəkət əmri (irəli, sağa 45 dərəcə dön...): Gemini-yə ikinci sorğu olmadan dərhal icra
@@ -2075,6 +2086,7 @@
     if (!alts.length) return;
     var text = alts[0], called = !!robotName && wakeInAlts(alts), active = Date.now() < activeUntil;
     if (replyWaiter) { var w = replyWaiter; replyWaiter = null; clearTimeout(w.t); lastVoice.textContent = text.slice(0, 140); w.res(text); return; }
+    if (called && !isStopWord(text)) { var qr2 = quickReply(stripName(text)); if (qr2) { chatLine('me', text); remember('İstifadəçi', text); ack(qr2); return; } }
     var cmd = null, hk = '', i;
     for (i = 0; i < alts.length && !cmd; i++) { var cc = localSimpleCommand(alts[i]); if (cc) { cmd = cc; hk = alts[i]; } }
     if (cmd && (cmd.drive === 'S' || called || active)) { execLocal(cmd, hk); return; }
@@ -2442,6 +2454,6 @@
     ttsTest: function () { return speak('Test'); }, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v50 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v51 ✓';
 })();
 </script>
