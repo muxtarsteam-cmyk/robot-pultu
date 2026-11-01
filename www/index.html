@@ -70,6 +70,11 @@
   .btns { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   .btns button { font-size:12px; padding:6px 4px; }
   details summary { font-size:13px; color:var(--muted); cursor:pointer; }
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-top:8px; text-align:center; font-size:12px; }
+  .cal span { padding:5px 0; border-radius:6px; color:var(--text); font-variant-numeric:tabular-nums; }
+  .cal .h { font-size:10px; color:var(--muted); }
+  .cal .o { color:transparent; }
+  .cal .t { background:var(--accent); color:#fff; font-weight:700; }
   .gy { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-top:8px; font-size:12px; color:var(--muted); }
   .gy div { background:#0f172a; border-radius:8px; padding:5px 6px; text-align:center; }
   .gy b { display:block; color:var(--text); font-size:15px; font-variant-numeric:tabular-nums; }
@@ -147,9 +152,9 @@
     <div id="ttsStatus" style="font-size:12px;opacity:.85;padding:2px 4px"></div>
     <div class="row"><label for="vsAcc">Anlama dəqiqliyi</label><select id="vsAcc"><option value="hi">Dəqiq (tövsiyə)</option><option value="fast">Sürətli</option></select></div>
     <div class="row"><label for="vsLogMax">Söhbət sayı (ekranda qalan)</label><input id="vsLogMax" type="number" min="1" max="100" inputmode="numeric"></div>
-    <div class="row"><label for="vsAwake">Oyaq qalma (san)</label><input id="vsAwake" type="number" min="3" max="60"></div>
+    <div class="row" style="display:none"><label for="vsAwake">Oyaq qalma (san)</label><input id="vsAwake" type="number" min="3" max="60"></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="vsSpeak"> Cavabı səslə oxu</label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="vsChat"> Cavabdan sonra bir az oyaq qal (adı təkrar demədən davam)</label>
+    <label style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="vsChat"> Cavabdan sonra bir az oyaq qal (adı təkrar demədən davam)</label>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text)"><input type="checkbox" id="vsCtx"> Çağırılmayan söhbətləri cavab üçün kontekst kimi istifadə et</label>
     <div class="info" style="justify-content:center" id="apiInfo">Sorğu: 0</div>
     <div class="info" style="justify-content:center" id="modeInfo">Açar yoxdur</div>
@@ -159,6 +164,13 @@
     <div class="vlog" id="heardBox"></div>
   </div>
   <h1>🤖 Robot Pultu <span id="ver" style="font-size:11px;color:var(--muted)">v35</span></h1>
+  <div class="card" id="clockCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div id="clkTime" style="font-size:30px;font-weight:700;font-variant-numeric:tabular-nums">--:--:--</div>
+      <div style="text-align:right"><div id="clkDate" style="font-size:15px;font-weight:600">—</div><div id="clkWeek" style="font-size:12px;color:var(--muted)">—</div></div>
+    </div>
+    <details style="margin-top:6px"><summary>📅 Təqvim</summary><div class="cal" id="clkCal"></div></details>
+  </div>
 
   <div class="card" id="apiPanel">
     <b style="font-size:13px">🔑 Gemini API Ayarları</b>
@@ -846,7 +858,7 @@
   }
 
   // ---------- Danışıq: yeni sistem (telefonun öz səsi; Cordova TTS ehtiyatı) ----------
-  var VS = { engine: sget('sy_engine', 'gemini'), awake: +sget('sy_awake', 10) || 10, speakOn: sget('sy_speak', '1') === '1', chatMode: sget('sy_chat2', '1') === '1', ctxOn: sget('sy_ctx', '1') === '1', voice: sget('sy_voice2', 'auto'), logMax: +sget('sy_logmax', 4), acc: sget('sy_acc', 'hi') };
+  var VS = { engine: sget('sy_engine', 'gemini'), awake: +sget('sy_awake', 10) || 10, speakOn: sget('sy_speak', '1') === '1', chatMode: false, ctxOn: sget('sy_ctx', '1') === '1', voice: sget('sy_voice2', 'auto'), logMax: +sget('sy_logmax', 4), acc: sget('sy_acc', 'hi') };
   var speakToken = 0, lastSpokenNorm = '', lastSpeakEnd = 0, afterSpeak = null;
   function stopSpeech() {
     speakToken++;
@@ -857,8 +869,7 @@
   }
   function endSpeakState(delay) {
     isSpeaking = false; ttsBusyUntil = Date.now() + delay; lastSpeakEnd = Date.now();
-    if (afterSpeak === 'ack' || (afterSpeak === 'chat' && VS.chatMode)) activeUntil = Date.now() + VS.awake * 1000;   // yalnız "Bəli, dinləyirəm" və ya (istəyə görə) cavabdan sonra əmr gözlənir
-    else convo = false;
+    activeUntil = 0; convo = false;                                                   // v52: cavabdan sonra heç bir gözləmə yoxdur. Növbəti sözü yenə adı çəkib deyirsən
     afterSpeak = null;
     try { micUpdate(); if (voiceOn) updateVoiceBtn(busy ? 'send' : 'idle'); } catch (e) {}
   }
@@ -912,7 +923,7 @@
 
   // Ziko-nun xarakteri (system instruction)
   function persona() {
-    return 'You are ' + (robotName || 'a robot') + ', a clever, warm, lively companion who lives inside a small wheeled robot body with a camera, a microphone and a speaker. ' +
+    return 'Current local date and time: ' + nowStr() + '. ' + 'You are ' + (robotName || 'a robot') + ', a clever, warm, lively companion who lives inside a small wheeled robot body with a camera, a microphone and a speaker. ' +
       'You are NOT a generic assistant or a machine: you have a personality, friendly, caring, curious and a little witty, like a smart friend at home. ' +
       'Speak natural, colloquial Azerbaijani (use "sən"), vary your wording, never repeat canned or template phrases, never say you are an AI model, and never mention prompts, tasks, JSON or tools. ' +
       'When you see something, notice the context and comment on it naturally, and offer help when it fits (for example: "Baxıram ki, masa bir az dağınıqdır, kömək edim?"). ' +
@@ -1880,7 +1891,7 @@
   })();
   function readVS() {
     VS.engine = $('voiceEngine').value; VS.awake = Math.min(60, Math.max(3, +$('vsAwake').value || 10));
-    VS.speakOn = $('vsSpeak').checked; VS.chatMode = $('vsChat').checked; VS.ctxOn = $('vsCtx').checked; AWAKE_MS = VS.awake * 1000;
+    VS.speakOn = $('vsSpeak').checked; VS.chatMode = false; VS.ctxOn = $('vsCtx').checked; AWAKE_MS = VS.awake * 1000;
     VS.logMax = Math.max(1, Math.min(100, parseInt($('vsLogMax').value, 10) || 4)); $('vsLogMax').value = VS.logMax; VS.voice = $('vsVoice').value || 'gemini'; ttsVoiceName = $('vsVoiceName').value || 'Kore'; gttsPause = 0; gttsFails = 0;
     sset('sy_engine', VS.engine); sset('sy_awake', VS.awake); sset('sy_speak', VS.speakOn ? '1' : '0'); sset('sy_chat2', VS.chatMode ? '1' : '0'); sset('sy_ctx', VS.ctxOn ? '1' : '0'); sset('sy_voice2', VS.voice); sset('sy_logmax', VS.logMax); VS.acc = $('vsAcc').value || 'hi'; sset('sy_acc', VS.acc); trimLogs(); sset('tts_voice', ttsVoiceName);
   }
@@ -1916,6 +1927,8 @@
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
       '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, like a warm, attentive person in colloquial Azerbaijani (use "sən"): one to three short sentences, plain text without markdown or emoji. Use the recent conversation to understand follow-ups (\"bəs o?\", \"niyə?\"). If the request is unclear, ask ONE short clarifying question instead of guessing. Put it in \"answer\".\n' +
       '- "none": noise, silence, music, TV or background chatter, or speech not addressed to the robot. If there is no clear human speech, reply {"heard":"","called":false,"intent":"none"}. NEVER invent words that were not clearly spoken; NEVER write the robot name unless it is clearly spoken.\n' +
+      'Current local date and time: ' + nowStr() + '.\n' +
+      'IMPORTANT: the robot does NOT keep listening after it replies. Never say "ver sualını", "dinləyirəm", "buyur de" or invite the user to continue. If the user only announces or asks permission to ask something ("sualım var", "sual verə bilərsən?"), reply with intent "ask" and answer just "Bəli." If the user only asks whether you CAN do something (a "...bilərsən?" question), answer briefly like "Bəli, danışaram." or "Bəli, edərəm." WITHOUT doing it, intent "ask".\n' +
       'Rules: "called" is true if the robot\'s name is heard anywhere in the utterance. Except for "stop", an utterance counts only if called is true or the session is active; otherwise use intent "none".';
   }
   function routerPrompt(active, isText) {
@@ -1954,9 +1967,50 @@
     activeUntil = 0;
     chatLine('bot', t); remember('Robot', t); speak(t, null).catch(function () {});
   }
+  // ===== Saat və təqvim (robot da tarix/saat sualına bununla cavab verir) =====
+  var AZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avqust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr'];
+  var AZ_DAYS = ['bazar', 'bazar ertəsi', 'çərşənbə axşamı', 'çərşənbə', 'cümə axşamı', 'cümə', 'şənbə'];
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function yearSuffix(y) {                                                            // 2026-cı, 2027-ci, 2023-cü ...
+    var d = y % 10, tens = Math.floor(y / 10) % 10, m = { 0: 'cı', 1: 'ci', 2: 'ci', 3: 'cü', 4: 'cü', 5: 'ci', 6: 'cı', 7: 'ci', 8: 'ci', 9: 'cu' }, mt = { 1: 'cu', 2: 'ci', 3: 'cu', 4: 'cı', 5: 'ci', 6: 'cı', 7: 'ci', 8: 'ci', 9: 'cı' };
+    return d === 0 && tens ? mt[tens] : m[d];
+  }
+  function nowStr() { var d = new Date(); return AZ_DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + AZ_MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', saat ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function dateTimeAnswer(rest) {                                                     // saat / tarix / gün / ay / il sualları: Gemini-siz dərhal cavab
+    var n = norm(rest), t = n.split(' ').filter(Boolean), d = new Date(), i, has = function (w) { return t.indexOf(w) >= 0; };
+    if (!t.length || t.length > 8) return '';
+    var ask = has('nece') || has('necedir') || has('hansi') || has('necenci') || has('neceninci') || has('necesi') || has('necesidir') || has('ne') || has('nedir');
+    if (has('saat') && (has('nece') || has('necedir') || has('necedi'))) return 'Saat ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + '.';
+    if (t.some(function (w) { return /^il(dir|de|deyik|di|imiz)?$/.test(w); }) && ask) return 'İndi ' + d.getFullYear() + '-' + yearSuffix(d.getFullYear()) + ' ildir.';
+    if (has('hansi') && t.some(function (w) { return /^ay(da|dir|di|dayiq|idir|i)?$/.test(w); })) return 'İndi ' + AZ_MONTHS[d.getMonth()] + ' ayıdır.';
+    var dateQ = has('tarix') || has('necesi') || has('necesidir') || has('necenci') || has('neceninci');
+    if (dateQ && !has('saat')) return 'Bu gün ' + d.getDate() + ' ' + AZ_MONTHS[d.getMonth()] + ', ' + AZ_DAYS[d.getDay()] + ' günüdür.';
+    if ((has('hansi') && (has('gun') || has('gundur'))) || (has('ne') && (has('gunu') || has('gundur') || has('gunudur') || has('gundu'))) || has('heftenin')) return 'Bu gün ' + AZ_DAYS[d.getDay()] + ' günüdür.';
+    return '';
+  }
+  var calKey = '';
+  function renderClock() {
+    var tEl = $('clkTime'); if (!tEl) return;
+    var d = new Date(); tEl.textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+    var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); if (key === calKey) return; calKey = key;       // tarix və təqvim yalnız gün dəyişəndə yenilənir
+    $('clkDate').textContent = d.getDate() + ' ' + AZ_MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+    var wd = AZ_DAYS[d.getDay()]; $('clkWeek').textContent = wd.charAt(0).toUpperCase() + wd.slice(1) + (/axşamı$/.test(wd) ? '' : ' günü');
+    var first = new Date(d.getFullYear(), d.getMonth(), 1), off = (first.getDay() + 6) % 7, dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(), h = ['B.e', 'Ç.a', 'Çər', 'C.a', 'Cüm', 'Şən', 'Baz'], html = '', k;
+    for (k = 0; k < 7; k++) html += '<span class="h">' + h[k] + '</span>';
+    for (k = 0; k < off; k++) html += '<span class="o">0</span>';
+    for (k = 1; k <= dim; k++) html += '<span' + (k === d.getDate() ? ' class="t"' : '') + '>' + k + '</span>';
+    $('clkCal').innerHTML = html;
+  }
+  renderClock(); setInterval(renderClock, 1000);
+
   function quickReply(rest) {                                                         // yalnız ad / "məni eşidirsən?" tipli yoxlama: Gemini-siz dərhal cavab
     var n = norm(rest); if (n.length < 2) return 'Bəli.';
+    var dt = dateTimeAnswer(rest); if (dt) return dt;
+    var tk = n.split(' ').filter(Boolean);
+    if (tk.length <= 7 && /nagil/.test(n) && /(bilersen|bilersiz)/.test(n)) return 'Bəli, danışaram.';                         // "nağıl danışa bilərsən?": icazə sualıdır, nağıl başlamır
+    if (tk.length <= 4 && /(^| )(necesen|necesiz)( |$)/.test(n)) { var hw = ['Yaxşıyam, sağ ol.', 'Əladır, sağ ol.', 'Yaxşıyam, təşəkkür edirəm.']; return hw[Math.floor(Math.random() * hw.length)]; }
     var t = n.split(' ').filter(Boolean), i, hear = false, live = false;
+    if (t.length <= 7 && /sual/.test(n) && /(bilersen|bilersiz|vere|verim|verecem|var)( |$)/.test(n)) return 'Bəli.';          // "sualıma cavab verə bilərsən?", "sualım var": robot gözləmir, yalnız "Bəli" deyir
     if (t.length > 4) return '';
     for (i = 0; i < t.length; i++) {
       if (/^esid/.test(t[i]) || t[i] === 'qulaq') hear = true;
@@ -2038,7 +2092,7 @@
     var cf = parseFloat(r.confidence); return { text: text, clear: isNaN(cf) ? true : cf >= 0.5 };
   }
   function askRepeat() {
-    var arr = ['Bağışla, tam eşitmədim. Təkrar edərsən?', 'Düz anlamadım, bir də deyərsən?'], t = arr[Math.floor(Math.random() * arr.length)];
+    var arr = ['Bağışla, tam eşitmədim. Adımı çəkib təkrar de.', 'Düz anlamadım. Adımı çəkib bir də de.'], t = arr[Math.floor(Math.random() * arr.length)];
     chatLine('bot', t); remember('Robot', t); speak(t, 'ack').catch(function () {});
   }
   async function routeAudio(wav, meta) {
@@ -2199,7 +2253,7 @@
       if (voiced) { voicedMs += ms; if (rms > peakRms) peakRms = rms; }
       if (rms > floor * 0.7) silenceMs = 0; else silenceMs += ms;
       if (speechMs > 6000 && voicedMs / speechMs < 0.12) { resetVad(); return; }                    // fasiləsiz küy
-      var hang = speechMs < 1500 ? Math.min(pauseMs, 650) : speechMs < 3500 ? Math.min(pauseMs, 900) : pauseMs;     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
+      var hang = speechMs < 1500 ? Math.min(pauseMs, 500) : speechMs < 3500 ? Math.min(pauseMs, 750) : pauseMs;     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
       if (silenceMs > hang || speechMs > 20000) finishUtterance();
     }
   }
@@ -2454,6 +2508,6 @@
     ttsTest: function () { return speak('Test'); }, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v51 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v53 ✓';
 })();
 </script>
