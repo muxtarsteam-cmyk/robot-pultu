@@ -142,7 +142,7 @@
     </div>
     <div class="row"><label for="voiceEngine">Dinləmə üsulu</label>
       <select id="voiceEngine"><option value="gemini">Gemini (səsi özü yazır)</option><option value="browser">Brauzer tanıması</option></select></div>
-    <div class="row"><label for="vsVoice">Danışıq səsi</label><select id="vsVoice"><option value="gemini">Təbii (Gemini)</option><option value="device">Telefon səsi</option></select></div>
+    <div class="row"><label for="vsVoice">Danışıq səsi</label><select id="vsVoice"><option value="auto">Sürətli: Gemini səsi, gecikəndə telefon səsi</option><option value="gemini">Yalnız Gemini səsi (gec ola bilər)</option><option value="device">Telefon səsi (ən sürətli)</option></select></div>
     <div class="row"><label for="vsVoiceName">Səs tonu</label><select id="vsVoiceName"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
     <div id="ttsStatus" style="font-size:12px;opacity:.85;padding:2px 4px"></div>
     <div class="row"><label for="vsAcc">Anlama dəqiqliyi</label><select id="vsAcc"><option value="hi">Dəqiq (tövsiyə)</option><option value="fast">Sürətli</option></select></div>
@@ -775,12 +775,14 @@
   ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlockTtsAudio, { passive: true }); });
   function playViaCtx(ac, blob, token) {
     return new Promise(function (resolve) {
-      var settled = false, src = null, to = null;
-      function end(v) { if (settled) return; settled = true; clearTimeout(to); curStop = null; resolve(v); }
+      var settled = false, src = null, to = null, dto = null;
+      function end(v) { if (settled) return; settled = true; clearTimeout(to); clearTimeout(dto); curStop = null; resolve(v); }
       var fr = new FileReader();
+      dto = setTimeout(function () { end(false); }, 5000);                            // səs çözülmədisə (bəzi telefonlarda geri çağırış gəlmir): 5 san sonra <audio> ilə cəhd, səssiz qalma
       fr.onerror = function () { end(false); };
       fr.onload = function () {
         function onBuf(buf) {
+          clearTimeout(dto);
           if (token !== speakToken) return end(true);
           try {
             src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination);
@@ -804,10 +806,10 @@
     }
     return playViaCtx(ac, blob, token);
   }
-  async function playGemini(chunks, token) {                                       // true = hamısı oxundu; rəqəm = ilk oxunmayan hissənin indeksi
+  async function playGemini(chunks, token, firstWait) {                                       // true = hamısı oxundu; rəqəm = ilk oxunmayan hissənin indeksi
     var next = geminiTTS(chunks[0]);
     for (var i = 0; i < chunks.length; i++) {
-      var blob = await Promise.race([next, sleep(i === 0 ? 14000 : 15000).then(function () { return null; })]);
+      var blob = await Promise.race([next, sleep(i === 0 ? (firstWait || 14000) : 15000).then(function () { return null; })]);
       if (token !== speakToken) return true;
       if (!blob) { gttsFails++; return i; }
       next = i + 1 < chunks.length ? geminiTTS(chunks[i + 1]) : null;               // növbətini öncədən hazırla
@@ -827,9 +829,15 @@
     if (st === 'çalınmadı') return 'səs gəldi, amma telefon oxutmağa icazə vermədi';
     return st ? 'xəta ' + st : 'cavab gəlmədi';
   }
+  function speedChunks(a) {                                                          // ilk hissə qısa olsun: səs daha tez başlasın
+    if (!a || !a.length) return a;
+    var f = a[0];
+    if (f.length > 100) { var m = /^([\s\S]{40,100}?[.!?;:,])\s+([\s\S]*)$/.exec(f); if (m) return [m[1]].concat(m[2] ? [m[2]] : [], a.slice(1)); }
+    return a;
+  }
   var ACKS = ['Bəli, dinləyirəm.', 'Buyur.', 'Hə, de görüm.'], lastAck = -1;
   function prewarmTTS() {
-    if (VS.voice !== 'gemini' || !VS.speakOn || !apiKey || Date.now() < gttsPause) return;
+    if (VS.voice === 'device' || !VS.speakOn || !apiKey || Date.now() < gttsPause) return;
     ACKS.forEach(function (t, i) {
       setTimeout(function () {
         if (voiceOn && Date.now() >= gttsPause) { var c = splitChunks(normalizeSpeech(t, false), 220); if (c[0]) geminiTTS(c[0]); }
@@ -838,7 +846,7 @@
   }
 
   // ---------- Danışıq: yeni sistem (telefonun öz səsi; Cordova TTS ehtiyatı) ----------
-  var VS = { engine: sget('sy_engine', 'gemini'), awake: +sget('sy_awake', 10) || 10, speakOn: sget('sy_speak', '1') === '1', chatMode: sget('sy_chat2', '1') === '1', ctxOn: sget('sy_ctx', '1') === '1', voice: sget('sy_voice', 'gemini'), logMax: +sget('sy_logmax', 4), acc: sget('sy_acc', 'hi') };
+  var VS = { engine: sget('sy_engine', 'gemini'), awake: +sget('sy_awake', 10) || 10, speakOn: sget('sy_speak', '1') === '1', chatMode: sget('sy_chat2', '1') === '1', ctxOn: sget('sy_ctx', '1') === '1', voice: sget('sy_voice2', 'auto'), logMax: +sget('sy_logmax', 4), acc: sget('sy_acc', 'hi') };
   var speakToken = 0, lastSpokenNorm = '', lastSpeakEnd = 0, afterSpeak = null;
   function stopSpeech() {
     speakToken++;
@@ -860,7 +868,7 @@
     stopSpeech();
     var token = speakToken;
     lastSpokenNorm = norm(text).slice(-500); afterSpeak = after || null;
-    var maxMs = Math.min(240000, 4000 + text.length * 110 + (VS.voice === 'gemini' ? 16000 : 0));                          // heç vaxt ilişib qalmasın: mikrofon bu vaxtdan gec bağlı qalmır
+    var maxMs = Math.min(240000, 4000 + text.length * 110 + (VS.voice === 'gemini' ? 16000 : VS.voice === 'auto' ? 8000 : 0));                          // heç vaxt ilişib qalmasın: mikrofon bu vaxtdan gec bağlı qalmır
     isSpeaking = true; ttsBusyUntil = Date.now() + maxMs; micUpdate();
     var wd = setTimeout(function () { if (token === speakToken) { stopSpeech(); endSpeakState(500); } }, maxMs);
     if (voiceOn) updateVoiceBtn('say');
@@ -868,26 +876,27 @@
       if (VS.speakOn) {
         var lang = pickLang(), bv = bestVoice(lang), bl = String((bv && bv.lang) || lang),
             clean = normalizeSpeech(text, /^az/i.test(bl) ? false : /^tr/i.test(bl) ? true : 'en'), ch = splitChunks(clean, 200);
-        var played = false, gWhy = '', devChunks = ch;
-        if (VS.voice === 'gemini') {
+        var played = false, gWhy = '', devChunks = ch, gem = VS.voice === 'gemini' || VS.voice === 'auto', auto = VS.voice === 'auto';
+        if (gem) {
           if (!apiKey) gWhy = 'açar yoxdur';
-          else if (Date.now() < gttsPause) gWhy = 'səs xidməti müvəqqəti gözləmədədir (' + Math.ceil((gttsPause - Date.now()) / 1000) + ' san)';
+          else if (Date.now() < gttsPause) gWhy = 'Gemini səs limiti dolub (' + Math.ceil((gttsPause - Date.now()) / 1000) + ' san gözləmə)';
           else if (navigator.onLine === false) gWhy = 'internet yoxdur';
           else {
-            var chG = splitChunks(normalizeSpeech(text, false), 220), tries = 0;
-            while (chG.length && !played && token === speakToken && tries < 2) {       // 2 cəhd: tək xəta səsi susdurmasın (telefon səsi istifadə olunmur)
+            var chG = speedChunks(splitChunks(normalizeSpeech(text, false), 220)), tries = 0, maxTries = auto ? 1 : 2;
+            var firstWait = auto ? (text.length > 200 ? 6000 : 2500) : 0;            // sürətli rejim: Gemini səsi bu vaxtda hazır olmasa telefon səsi dərhal danışır
+            while (chG.length && !played && token === speakToken && tries < maxTries) {
               tries++; gttsLastStatus = '';
-              var res = await playGemini(chG, token);
+              var res = await playGemini(chG, token, firstWait);
               played = (res === true);
-              if (!played && typeof res === 'number' && res > 0) chG = chG.slice(res);
-              if (!played && token === speakToken && tries < 2) await sleep(700);
+              if (!played && typeof res === 'number' && res > 0) { chG = chG.slice(res); devChunks = chG; }
+              if (!played && token === speakToken && tries < maxTries) await sleep(700);
             }
-            if (!played && token === speakToken) gWhy = ttsWhy(gttsLastStatus);
+            if (!played && token === speakToken) gWhy = ttsWhy(gttsLastStatus) + (auto && !gttsLastStatus ? ' (gec gəldi)' : '');
           }
-          if (!played && gWhy && token === speakToken) { note('🔇 Gemini səsi çıxmadı: ' + gWhy); chatLine('sys', '🔇 Gemini səsi çıxmadı: ' + gWhy); }
+          if (!played && gWhy && token === speakToken && !auto) { note('🔇 Gemini səsi çıxmadı: ' + gWhy); chatLine('sys', '🔇 Gemini səsi çıxmadı: ' + gWhy); }
         }
-        var stEl = $('ttsStatus'); if (stEl && token === speakToken) stEl.textContent = VS.voice !== 'gemini' ? '📱 Telefon səsi seçilib' : played ? '🔊 Gemini səsi işləyir: ' + ttsVoiceName : '🔇 Gemini səsi çıxmadı. Səbəb: ' + (gWhy || 'məlum deyil');
-        if (!played && VS.voice !== 'gemini') for (var di = 0; di < devChunks.length && token === speakToken; di++) await speakDevice(devChunks[di], lang);   // telefon səsi yalnız özün seçəndə
+        var stEl = $('ttsStatus'); if (stEl && token === speakToken) stEl.textContent = VS.voice === 'device' ? '📱 Telefon səsi seçilib' : played ? '🔊 Gemini səsi işləyir: ' + ttsVoiceName : (auto ? '📱 Bu cavab telefon səsi ilə: ' : '🔇 Gemini səsi çıxmadı. Səbəb: ') + (gWhy || 'məlum deyil');
+        if (!played && (VS.voice === 'device' || auto)) for (var di = 0; di < devChunks.length && token === speakToken; di++) await speakDevice(devChunks[di], lang);   // telefon səsi: özün seçəndə və ya sürətli rejimdə Gemini gecikəndə
       } else await sleep(250);
     } catch (e) {}
     clearTimeout(wd);
@@ -1873,7 +1882,7 @@
     VS.engine = $('voiceEngine').value; VS.awake = Math.min(60, Math.max(3, +$('vsAwake').value || 10));
     VS.speakOn = $('vsSpeak').checked; VS.chatMode = $('vsChat').checked; VS.ctxOn = $('vsCtx').checked; AWAKE_MS = VS.awake * 1000;
     VS.logMax = Math.max(1, Math.min(100, parseInt($('vsLogMax').value, 10) || 4)); $('vsLogMax').value = VS.logMax; VS.voice = $('vsVoice').value || 'gemini'; ttsVoiceName = $('vsVoiceName').value || 'Kore'; gttsPause = 0; gttsFails = 0;
-    sset('sy_engine', VS.engine); sset('sy_awake', VS.awake); sset('sy_speak', VS.speakOn ? '1' : '0'); sset('sy_chat2', VS.chatMode ? '1' : '0'); sset('sy_ctx', VS.ctxOn ? '1' : '0'); sset('sy_voice', VS.voice); sset('sy_logmax', VS.logMax); VS.acc = $('vsAcc').value || 'hi'; sset('sy_acc', VS.acc); trimLogs(); sset('tts_voice', ttsVoiceName);
+    sset('sy_engine', VS.engine); sset('sy_awake', VS.awake); sset('sy_speak', VS.speakOn ? '1' : '0'); sset('sy_chat2', VS.chatMode ? '1' : '0'); sset('sy_ctx', VS.ctxOn ? '1' : '0'); sset('sy_voice2', VS.voice); sset('sy_logmax', VS.logMax); VS.acc = $('vsAcc').value || 'hi'; sset('sy_acc', VS.acc); trimLogs(); sset('tts_voice', ttsVoiceName);
   }
   AWAKE_MS = VS.awake * 1000;
   ['vsAwake', 'vsSpeak', 'vsChat', 'vsCtx', 'vsVoice', 'vsVoiceName', 'vsLogMax', 'vsAcc'].forEach(function (id) { $(id).addEventListener('change', readVS); });
@@ -2029,7 +2038,14 @@
     var called = !!robotName && hasWake(text), stopWord = isStopWord(text);
     if (!called && !active && !stopWord) { lastVoice.textContent = text.slice(0, 140); heardLog(text); pushOverheard(text); return; }       // çağırılmayıb: yalnız yazılır
     if (!called && !stopWord && meta && (meta.voicedMs < 350 || meta.snr < 3.5)) return;                                                       // real nitq izi yoxdur
+    var restTxt = called ? stripName(text) : text;
+    if (called && norm(restTxt).length < 2 && !stopWord) {                                                                                    // yalnız ad: Gemini-yə ikinci sorğu getmir, dərhal cavab
+      var hn0 = norm(text); if (hn0 && hn0 === lastHeardN && Date.now() - lastHeardT < 4000) return;
+      lastHeardN = hn0; lastHeardT = Date.now(); lastVoice.textContent = text.slice(0, 140); chatLine('me', text); remember('İstifadəçi', text); activeUntil = 0; ack(); return;
+    }
     if (!tr.clear && !stopWord && norm(stripName(text)).length >= 3) { lastVoice.textContent = text.slice(0, 140) + ' (?)'; chatLine('me', text + ' (?)'); if (!(acting || mission)) askRepeat(); return; }   // əmin deyil: tapmır, soruşur
+    var lc = localSimpleCommand(text);                                                                                                       // sadə hərəkət əmri (irəli, sağa 45 dərəcə dön...): Gemini-yə ikinci sorğu olmadan dərhal icra
+    if (lc && (lc.drive === 'S' || called || active) && !(mission && lc.drive !== 'S')) { execLocal(lc, text); return; }
     var t = await gemini([{ text: routerPrompt(active, true) + '\nUser said: ' + JSON.stringify(text) }], { json: true, maxTokens: 900, fast: true, timeout: 9000 });
     var r = parseJSON(t); if (!r) return;
     r.heard = text;                                                                                                                         // ekranda göstərilən mətn = eşidilən dəqiq mətn
@@ -2171,7 +2187,7 @@
       if (voiced) { voicedMs += ms; if (rms > peakRms) peakRms = rms; }
       if (rms > floor * 0.7) silenceMs = 0; else silenceMs += ms;
       if (speechMs > 6000 && voicedMs / speechMs < 0.12) { resetVad(); return; }                    // fasiləsiz küy
-      var hang = speechMs < 1500 ? Math.min(pauseMs, 800) : speechMs < 3500 ? Math.min(pauseMs, 1000) : pauseMs;     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
+      var hang = speechMs < 1500 ? Math.min(pauseMs, 650) : speechMs < 3500 ? Math.min(pauseMs, 900) : pauseMs;     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
       if (silenceMs > hang || speechMs > 20000) finishUtterance();
     }
   }
@@ -2226,8 +2242,13 @@
 
   // ---------- başlat / dayandır ----------
   $('vsVoiceName').addEventListener('change', function () { readVS(); unlockTTS(); speak('Salam, mən bu səslə danışıram.').catch(function () {}); });   // seçəndə dərhal dinlə
+  function warmApi() {                                                               // yüngül sorğu: bağlantı açıq qalır, ilk əsl sorğu 0,3-0,5 san tez gedir
+    if (!apiKey || !voiceOn || isRateLimited || navigator.onLine === false) return;
+    try { fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=' + encodeURIComponent(apiKey), { method: 'GET' }).catch(function () {}); } catch (e) {}
+  }
+  setInterval(function () { if (voiceOn) warmApi(); }, 40000);
   function startVoice() {
-    unlockTTS(); readVS(); setTimeout(prewarmTTS, 2000);
+    unlockTTS(); readVS(); setTimeout(prewarmTTS, 2000); setTimeout(warmApi, 900);
     if (!apiKey && !(VS.engine === 'browser' && !robotName)) { warn('Əvvəl Gemini API açarını yazın (🔑 Gemini API Ayarları)', true); return; }
     voiceOn = true; activeUntil = 0; busy = 0; routing = false; pendingU = null;
     updateVoiceBtn('idle');
@@ -2421,6 +2442,6 @@
     ttsTest: function () { return speak('Test'); }, state: function () { return { connected: connected, mission: mission && mission.title, people: people, active: activeUntil }; }
   };
   limUpdate(); updateVoiceBtn('idle'); keyHint();
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v48 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v50 ✓';
 })();
 </script>
