@@ -182,8 +182,9 @@
     </div>
     <div class="row"><label for="voiceEngine">Dinləmə üsulu</label>
       <select id="voiceEngine"><option value="gemini">Gemini (səsi özü yazır)</option><option value="browser">Brauzer tanıması</option></select></div>
-    <div class="row"><label for="vsVoice">Danışıq səsi</label><select id="vsVoice"><option value="auto">Sürətli: Gemini səsi, gecikəndə telefon səsi</option><option value="gemini">Yalnız Gemini səsi (gec ola bilər)</option><option value="device">Telefon səsi (ən sürətli)</option></select></div>
-    <div class="row"><label for="vsVoiceName">Səs tonu</label><select id="vsVoiceName"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
+    <div class="row"><label for="vsGender">Səsin cinsiyyəti</label><select id="vsGender"><option value="female">Qadın</option><option value="male">Kişi</option></select></div>
+    <div class="row" style="display:none"><label for="vsVoice">Danışıq səsi</label><select id="vsVoice"><option value="auto">Sürətli: Gemini səsi, gecikəndə telefon səsi</option><option value="gemini">Yalnız Gemini səsi (gec ola bilər)</option><option value="device">Telefon səsi (ən sürətli)</option></select></div>
+    <div class="row" style="display:none"><label for="vsVoiceName">Səs tonu</label><select id="vsVoiceName"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Orus</option></select></div>
     <div id="ttsStatus" style="font-size:12px;opacity:.85;padding:2px 4px"></div>
     <div class="row"><label for="vsAcc">Anlama dəqiqliyi</label><select id="vsAcc"><option value="hi">Dəqiq (tövsiyə)</option><option value="fast">Sürətli</option></select></div>
     <div class="row"><label for="vsLogMax">Söhbət sayı (ekranda qalan)</label><input id="vsLogMax" type="number" min="1" max="100" inputmode="numeric"></div>
@@ -923,6 +924,16 @@
     }
     return best;
   }
+  var MALE_RX = /(^|[^a-z])male(?![a-z])|erkek|\bman\b|kişi|kisi/i, FEM_RX = /female|kadın|kadin|woman|qadın/i;
+  function genderVoice(lang) {                                                       // cihazda adına görə kişi/qadın səsi varsa onu seç
+    loadVoices(); var want = VS.gender === 'male' ? MALE_RX : FEM_RX, pre = String(lang).slice(0, 2).toLowerCase(), best = null, bs = -1, i, v, sc, vl;
+    for (i = 0; i < ttsVoices.length; i++) {
+      v = ttsVoices[i]; vl = String(v.lang || '').replace('_', '-').toLowerCase();
+      if (!want.test(v.name || '') || !(vl.slice(0, 2) === pre || /^(az|tr)/.test(vl))) continue;
+      sc = (vl.slice(0, 2) === pre ? 10 : 0) + voiceScore(v); if (sc > bs) { bs = sc; best = v; }
+    }
+    return best;
+  }
   // Ən təbii səsi avtomatik seçir: az-AZ > tr-TR > ingilis/istənilən; hər dildə keyfiyyət balı ilə
   function bestVoice(lang) {
     loadVoices();
@@ -981,6 +992,7 @@
   function speakDevice(text, lang) {
     return new Promise(function (resolve) {
       var done = false, plugin = window.TTS && typeof window.TTS.speak === 'function';
+      if (plugin && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') { loadVoices(); if (ttsVoices.length) plugin = false; }   // ton/cinsiyyət yalnız brauzer sintezində idarə olunur
       var guard = setTimeout(fin, 2000 + text.length * 95);
       function fin() { if (done) return; done = true; clearTimeout(guard); resolve(); }
       function viaWeb() {
@@ -992,9 +1004,9 @@
           loadVoices();
           try { speechSynthesis.cancel(); speechSynthesis.resume(); } catch (e) {}
           var u = new SpeechSynthesisUtterance(text);
-          u.lang = lang; u.volume = 1; u.rate = 0.95; u.pitch = 1.0;
-          var v = bestVoice(lang); if (v) { u.voice = v; u.lang = v.lang || lang; }
-          var native = v && /^az/i.test(v.lang || ''); u.rate = native ? 0.95 : 0.9; u.pitch = 1.0;
+          u.lang = lang; u.volume = 1;
+          var gvv = genderVoice(lang), v = gvv || bestVoice(lang); if (v) { u.voice = v; u.lang = v.lang || lang; }
+          var male = VS.gender === 'male'; u.rate = male ? 0.88 : 0.95; u.pitch = gvv ? 1.0 : (male ? 0.55 : 1.12);   // uyğun adlı səs yoxdursa, kişi üçün qalın, qadın üçün incə ton
           u.onend = fin; u.onerror = fin;
           speechSynthesis.speak(u);
         } catch (e) { setTimeout(fin, 800); }
@@ -1199,7 +1211,7 @@
   }
 
   // ---------- Danışıq: yeni sistem (telefonun öz səsi; Cordova TTS ehtiyatı) ----------
-  var VS = { engine: sget('sy_engine', 'gemini'), awake: +sget('sy_awake', 10) || 10, speakOn: sget('sy_speak', '1') === '1', chatMode: false, ctxOn: sget('sy_ctx', '1') === '1', voice: sget('sy_voice2', 'auto'), logMax: +sget('sy_logmax', 4), acc: sget('sy_acc', 'hi') };
+  var VS = { engine: sget('sy_engine', 'gemini'), awake: +sget('sy_awake', 10) || 10, speakOn: sget('sy_speak', '1') === '1', chatMode: false, ctxOn: sget('sy_ctx', '1') === '1', voice: 'device', gender: sget('sy_gender', 'female'), logMax: +sget('sy_logmax', 4), acc: sget('sy_acc', 'hi') };
   var speakToken = 0, lastSpokenNorm = '', lastSpeakEnd = 0, afterSpeak = null;
   function stopSpeech() {
     speakToken++;
@@ -1261,7 +1273,7 @@
   //  GEMINI (mətn, səs, şəkil)
   // =====================================================================
   // Köhnə model yeni açarlara bağlıdır (404). Sıra ilə işləyəni tapır və yadda saxlayır.
-  var MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+  var MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-lite-latest'];
 
   // Ziko-nun xarakteri (system instruction)
   function persona() {
@@ -1350,10 +1362,10 @@
     if (isRateLimited || Date.now() < quotaUntil) { apiStats.skipped++; updateApiInfo(); throw new Error('Gemini limiti dolub. Bərpa: ' + fmtWait((quotaUntil - Date.now()) / 1000)); }
     if (!opts.fast) await apiThrottle();
     apiStats.calls++; if (hasImage(parts)) apiStats.img++; updateApiInfo();
-    var list = goodModel ? [goodModel].concat(MODELS.filter(function (m) { return m !== goodModel; }).slice(0, opts.fast ? 1 : 0)) : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false, aborts = 0;
+    var list = goodModel ? [goodModel].concat(MODELS.filter(function (m) { return m !== goodModel; }).slice(0, 0)) : MODELS.slice(), lastStatus = 0, retry429 = 0, noJson = false, aborts = 0;
     if (opts.pref) list = [opts.pref].concat(list.filter(function (m) { return m !== opts.pref; }));     // dəqiq anlama üçün güclü model birinci
     for (var i = 0; i < list.length; i++) {
-      var body = { contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 600 } };
+      var body = { contents: [{ parts: parts }], generationConfig: { temperature: opts.temp == null ? 0 : opts.temp, maxOutputTokens: opts.maxTokens || 350 } };
       if (opts.fast && thinkOk !== '0' && !body.generationConfig.thinkingConfig) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };   // düşünmə vaxtını sıfırla: daha sürətli cavab
       if (!opts.nosys) body.systemInstruction = { parts: [{ text: persona() }] };       // sadə JSON tapşırıqlarında xarakter mətni göndərilmir
       if (opts.json && !noJson) body.generationConfig.responseMimeType = 'application/json';
@@ -2226,19 +2238,20 @@
 
   // ---------- ayarlar ----------
   var SRC = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (sget('eco_v1', '0') !== '1') { sset('eco_v1', '1'); VS.ctxOn = false; sset('sy_ctx', '0'); VS.acc = 'fast'; sset('sy_acc', 'fast'); rpmLimit = 6; sset('rpm_limit', 6); rpdLimit = 120; sset('rpd_limit', 120); apiGap = 4000; sset('api_gap', 4000); if (SRC) { VS.engine = 'browser'; sset('sy_engine', 'browser'); } }   // Gemini qənaəti: bir dəfə tətbiq olunur
   if (!SRC && VS.engine === 'browser') VS.engine = 'gemini';
   (function () {
-    $('voiceEngine').value = VS.engine; $('vsVoice').value = VS.voice; $('vsLogMax').value = Math.max(1, Math.min(100, VS.logMax || 4)); $('vsAcc').value = VS.acc; $('vsVoiceName').value = ttsVoiceName; $('vsAwake').value = VS.awake; $('vsSpeak').checked = VS.speakOn; $('vsChat').checked = VS.chatMode; $('vsCtx').checked = VS.ctxOn;
+    $('voiceEngine').value = VS.engine; $('vsVoice').value = VS.voice; $('vsGender').value = VS.gender; $('vsLogMax').value = Math.max(1, Math.min(100, VS.logMax || 4)); $('vsAcc').value = VS.acc; $('vsVoiceName').value = ttsVoiceName; $('vsAwake').value = VS.awake; $('vsSpeak').checked = VS.speakOn; $('vsChat').checked = VS.chatMode; $('vsCtx').checked = VS.ctxOn;
     if (!SRC) { var o = $('voiceEngine').querySelector('option[value=browser]'); if (o) o.disabled = true; }
   })();
   function readVS() {
     VS.engine = $('voiceEngine').value; VS.awake = Math.min(60, Math.max(3, +$('vsAwake').value || 10));
     VS.speakOn = $('vsSpeak').checked; VS.chatMode = false; VS.ctxOn = $('vsCtx').checked; AWAKE_MS = VS.awake * 1000;
-    VS.logMax = Math.max(1, Math.min(100, parseInt($('vsLogMax').value, 10) || 4)); $('vsLogMax').value = VS.logMax; VS.voice = $('vsVoice').value || 'gemini'; ttsVoiceName = $('vsVoiceName').value || 'Kore'; gttsPause = 0; gttsFails = 0;
+    VS.logMax = Math.max(1, Math.min(100, parseInt($('vsLogMax').value, 10) || 4)); $('vsLogMax').value = VS.logMax; VS.voice = 'device'; VS.gender = $('vsGender').value === 'male' ? 'male' : 'female'; sset('sy_gender', VS.gender); ttsVoiceName = $('vsVoiceName').value || 'Kore'; gttsPause = 0; gttsFails = 0;
     sset('sy_engine', VS.engine); sset('sy_awake', VS.awake); sset('sy_speak', VS.speakOn ? '1' : '0'); sset('sy_chat2', VS.chatMode ? '1' : '0'); sset('sy_ctx', VS.ctxOn ? '1' : '0'); sset('sy_voice2', VS.voice); sset('sy_logmax', VS.logMax); VS.acc = $('vsAcc').value || 'hi'; sset('sy_acc', VS.acc); trimLogs(); sset('tts_voice', ttsVoiceName);
   }
   AWAKE_MS = VS.awake * 1000;
-  ['vsAwake', 'vsSpeak', 'vsChat', 'vsCtx', 'vsVoice', 'vsVoiceName', 'vsLogMax', 'vsAcc'].forEach(function (id) { $(id).addEventListener('change', readVS); });
+  ['vsAwake', 'vsSpeak', 'vsChat', 'vsCtx', 'vsVoice', 'vsGender', 'vsVoiceName', 'vsLogMax', 'vsAcc'].forEach(function (id) { $(id).addEventListener('change', readVS); });
   $('voiceEngine').addEventListener('change', function () { var was = voiceOn; readVS(); if (was) { stopVoice(); startVoice(); } });
 
   // ---------- Gemini sorğuları ----------
@@ -2642,12 +2655,13 @@
   }, 1000);
 
   // ---------- başlat / dayandır ----------
+  $('vsGender').addEventListener('change', function () { readVS(); unlockTTS(); speak('Salam, mən bu səslə danışıram.').catch(function () {}); });
   $('vsVoiceName').addEventListener('change', function () { readVS(); unlockTTS(); speak('Salam, mən bu səslə danışıram.').catch(function () {}); });   // seçəndə dərhal dinlə
   function warmApi() {                                                               // yüngül sorğu: bağlantı açıq qalır, ilk əsl sorğu 0,3-0,5 san tez gedir
     if (!apiKey || !voiceOn || isRateLimited || navigator.onLine === false) return;
     try { fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=' + encodeURIComponent(apiKey), { method: 'GET' }).catch(function () {}); } catch (e) {}
   }
-  setInterval(function () { if (voiceOn) warmApi(); }, 40000);
+  /* warmApi aradan qaldırıldı: limit qənaəti */
   function startVoice() {
     unlockTTS(); readVS(); setTimeout(prewarmTTS, 2000); setTimeout(warmApi, 900);
     if (!apiKey && !(VS.engine === 'browser' && !robotName)) { warn('Əvvəl Gemini API açarını yazın (🔑 Gemini API Ayarları)', true); return; }
@@ -2853,7 +2867,7 @@
   setInterval(function () {                                                           // robot üzü: vəziyyət
     try { if (window.RB) RB.sync({ talk: isSpeaking, think: busy > 0 && !isSpeaking, search: !!mission && /tap|yanına|hədəf|qapı|axtar/i.test(mission.title || ''), sleep: !voiceOn, tired: isRateLimited, awake: Date.now() < activeUntil, mission: !!mission }); } catch (e) {}
   }, 150);
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v58 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v59 ✓';
 })();
 </script>
 <script>
