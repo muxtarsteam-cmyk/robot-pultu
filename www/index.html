@@ -107,7 +107,7 @@
   #rbFS { position:fixed; left:0; top:0; right:0; bottom:0; z-index:99999; background:#00030f; overflow:hidden; -webkit-user-select:none; user-select:none; touch-action:manipulation; }
   #rbRot { position:absolute; left:50%; top:50%; }
   #rbStage { position:absolute; left:0; top:0; width:1672px; height:941px; transform-origin:0 0; }
-  #rbHeadG { position:absolute; left:0; top:0; width:1672px; height:941px; transform-origin:50% 50%; will-change:transform; }
+  #rbHeadG { position:absolute; left:0; top:0; width:1672px; height:941px; transform-origin:50% 50%; }
   #rbHeadG img, #rbHeadG .rbE { position:absolute; }
   #rbBase { left:0; top:0; width:1672px; height:941px; display:block; }
   #rbHeadG .rbE img { position:static; display:block; width:100%; height:100%; }
@@ -305,6 +305,7 @@
   var F = { talk: 0, think: 0, search: 0, sleep: 0, tired: 0, awake: 0, mission: 0 };
   var hearUntil = 0, hearSide = 1, emote = null, driveDir = '', driveUntil = 0, yesUntil = 0, yesStart = 0;
   var nextBlink = 0, blinkAt = -9999, nextSacc = 0, idleLX = 0, idleLY = 0, lastPart = 0, prevAwake = false;
+  var searchUntil = 0, sayText = '', sayStart = 0, lastActive = Date.now(), yawned = false, driveStart = 0, tapN = 0, tapT = 0;
   var cur = { lookX: 0, lookY: 0, lidTop: 0, lidBot: 0, bL: 0, bR: 0, tL: 0, tR: 0, open: .94, sag: 8, mw: 1, perk: 0, yaw: 0, pitch: 0, roll: 0, hx: 0, hy: 0, blush: 0, irisS: 1, dimv: 0 };
   var RATE = { lookX: 9, lookY: 9, lidTop: 16, lidBot: 9, bL: 10, bR: 10, tL: 10, tR: 10, open: 24, sag: 8, mw: 10, perk: 12, yaw: 5, pitch: 12, roll: 8, hx: 8, hy: 12, blush: 5, irisS: 10, dimv: 3 };
 
@@ -372,6 +373,18 @@
     Mg2.setAttribute('transform', 'translate(836 0) scale(' + mw.toFixed(3) + ' 1) translate(-836 0)');
   }
 
+  /* ---------- danışarkən ağız: mətndəki saitlərə görə (a/ə geniş, o/u yumru, e/i enli, b/m/p qapalı) ---------- */
+  function lipShape(now) {
+    if (!sayText) return null;
+    var i = Math.floor((now - sayStart) / 1000 * 13); if (i < 0) return null;
+    var c = sayText.charAt(i % sayText.length).toLowerCase();
+    if ('aə'.indexOf(c) >= 0) return [.95, 1];
+    if ('oöuü'.indexOf(c) >= 0) return [.62, .72];
+    if ('eıiy'.indexOf(c) >= 0) return [.38, 1.16];
+    if ('bmpv'.indexOf(c) >= 0) return [.06, 1];
+    if (' ,.!?'.indexOf(c) >= 0) return [.12, 1];
+    return [.3, 1];
+  }
   /* ---------- vəziyyətə görə hədəf pozası ---------- */
   function compute(now, T) {
     var o = { lookX: 0, lookY: 0, lidTop: 0, lidBot: 0, bL: 0, bR: 0, tL: 0, tR: 0, open: .94 + .06 * Math.sin(T * 1.3), sag: 8, mw: 1, perk: 0, yaw: 0, pitch: 0, roll: Math.sin(T * .7) * .8, hx: 0, hy: Math.sin(T * 1.5) * 3, blush: 0, irisS: 1, dimv: 0 };
@@ -382,15 +395,20 @@
     if (F.awake) { o.perk = .55; o.bL = o.bR = -8; o.irisS = 1.04; o.lookX *= .3; o.lookY *= .3; }
     if (F.think) { o.lookY = -.75; o.lookX = Math.sin(T * 1.3) * .55; o.bL = -16; o.bR = -2; o.open = .32; o.sag = 4; o.mw = .85; o.roll = -3; }
     if (now < driveUntil) {
-      if (driveDir === 'L') { o.lookX = -.95; o.yaw = -8; o.lookY = 0; }
-      else if (driveDir === 'R') { o.lookX = .95; o.yaw = 8; o.lookY = 0; }
-      else if (driveDir === 'F') { o.lookX = 0; o.lookY = -.2; o.bL = o.bR = -4; o.tL = o.tR = -6; }
-      else if (driveDir === 'B') { o.lookX = 0; o.lookY = .7; o.pitch = 5; }
+      var dk = driveDir, sl = (dk === 'Q' || dk === 'E') ? .55 : 1, ramp = Math.min(1, (now - driveStart) / 220);
+      if (dk === 'L' || dk === 'Q') { o.lookX = -.98 * ramp; o.lookY = 0; o.yaw = -14 * sl * ramp; o.roll -= 2 * sl * ramp; o.hx = -10 * sl * ramp; }
+      else if (dk === 'R' || dk === 'E') { o.lookX = .98 * ramp; o.lookY = 0; o.yaw = 14 * sl * ramp; o.roll += 2 * sl * ramp; o.hx = 10 * sl * ramp; }
+      else if (dk === 'F') { o.lookX = 0; o.lookY = -.35; o.bL = o.bR = -6; o.tL = o.tR = -8; o.pitch = -4; o.irisS = 1.04; }
+      else if (dk === 'B') { o.lookX = 0; o.lookY = .7; o.pitch = 7; o.bL = o.bR = 4; o.irisS = .96; o.hy += 4; }
     }
-    if (F.search) { o.yaw = 18 * Math.sin(T * 1.9); o.lookX = .95 * Math.sin(T * 1.9 + .55); o.lookY = 0; o.bL = o.bR = -6; o.irisS = 1.03; }
+    if (F.search || now < searchUntil) { o.yaw = 18 * Math.sin(T * 1.9); o.lookX = .95 * Math.sin(T * 1.9 + .55); o.lookY = 0; o.bL = o.bR = -6; o.irisS = 1.03; }
     if (now < hearUntil) { o.perk = 1; o.roll += 4 * hearSide; o.yaw += 3 * hearSide; o.bL = o.bR = -10; o.lookX = .45 * hearSide; }
-    if (F.talk) { o.open = .4 + .6 * Math.abs(Math.sin(T * 9.2)) * (.65 + .35 * Math.sin(T * 3.3 + 1)); o.mw = 1 + .04 * Math.sin(T * 9.2); o.hy += 2.5 * Math.sin(T * 9.2); }
+    if (F.talk) { var vo = lipShape(now); if (vo) { o.open = vo[0]; o.mw = vo[1]; } else { o.open = .4 + .6 * Math.abs(Math.sin(T * 9.2)) * (.65 + .35 * Math.sin(T * 3.3 + 1)); o.mw = 1 + .04 * Math.sin(T * 9.2); } o.hy += 2.5 * Math.sin(T * 9.2); }
     if (now < yesUntil) { var ty = (now - yesStart) / 1000; o.pitch += 11 * Math.sin(ty * 7.4); o.hy += 5 * Math.sin(ty * 7.4); o.lookX = 0; o.lookY = 0; o.roll += 2 * Math.sin(ty * 3.7); }
+    var idleS = (now - lastActive) / 1000, asleep = idleS > 60;
+    if (idleS < 30) yawned = false;
+    if (!asleep && !yawned && idleS > 32 && !F.talk) { yawned = true; setEmote('yawn', 2600); }
+    if (!asleep && idleS > 25 && !F.awake) { var dz = clamp((idleS - 25) / 35, 0, 1); o.lidTop = Math.max(o.lidTop, .5 * dz); o.pitch += 3 * dz; }
     var em = (emote && now < emote.until) ? emote.n : '';
     var ts = (now - (emote ? emote.t0 : 0)) / 1000;
     if (em === 'joy') {
@@ -404,13 +422,19 @@
     } else if (em === 'smile') {
       o.lidBot = .28; o.open = .7; o.mw = 1.08; o.blush = .5; o.bL = o.bR = -6; o.lookX *= .3; o.lookY *= .3;
     } else if (em === 'sad') {
-      o.tL = o.tR = 16; o.bL = o.bR = 4; o.open = 0; o.sag = -20; o.lookY = .6; o.lookX = 0; o.pitch = 6; o.irisS = .96; o.hy += 8;
+      o.tL = o.tR = 16; o.bL = o.bR = 4; o.open = 0; o.sag = -20; o.lookY = .6; o.lookX = 0; o.pitch = 6; o.irisS = .96; o.hy += 8; o.hx += 1.6 * Math.sin(ts * 28);
+    } else if (em === 'yawn') {
+      var yp = Math.sin(clamp(ts / 2.4, 0, 1) * Math.PI);
+      o.open = .25 + .75 * yp; o.mw = 1 - .25 * yp; o.lidTop = .2 + .55 * yp; o.bL = o.bR = -14 * yp; o.pitch = -6 * yp; o.perk = 0; o.lookX = 0; o.lookY = 0;
+    } else if (em === 'dance') {
+      o.lidBot = .45; o.open = .8; o.mw = 1.1; o.blush = .6; o.lookX = 0; o.lookY = 0; o.roll += 9 * Math.sin(ts * 4.2); o.hx = 22 * Math.sin(ts * 4.2); o.yaw += 8 * Math.sin(ts * 2.1); o.hy -= 8 * Math.abs(Math.sin(ts * 8.4));
+      if (now - lastPart > 380) { lastPart = now; spawn(Math.random() < .5 ? '\u266A' : '\u266B', '#8ff0ff'); }
     } else if (em === 'surprise') {
       o.bL = o.bR = -28; o.open = .8; o.mw = .6; o.irisS = .88; o.perk = 1; o.pitch = -5; o.lookX = 0; o.lookY = 0;
     } else if (em === 'sleepy') {
       o.lidTop = .75; o.open = .25; o.sag = 6; o.bL = o.bR = 8; o.pitch = 5; o.lookY = .3;
-    } else if (F.sleep && !F.talk && !F.mission && now >= hearUntil) {
-      o.lidTop = 1; o.open = .1; o.sag = 12; o.bL = o.bR = 10; o.pitch = 7; o.hy = 14 + Math.sin(T * 1.1) * 4; o.lookX = 0; o.lookY = 0; o.dimv = .4; o.irisS = 1; o.perk = 0;
+    } else if (asleep && !F.talk && !F.mission && now >= hearUntil) {
+      o.lidTop = 1; o.open = .1; o.sag = 12; o.bL = o.bR = 10; o.pitch = 7; o.hy = 14 + Math.sin(T * 1.1) * 4; o.lookX = 0; o.lookY = 0; o.dimv = 0; o.irisS = 1; o.perk = 0;
       if (now - lastPart > 1400) { lastPart = now; spawn(Math.random() < .5 ? 'z' : 'Z', '#8fb4ff', true); }
     }
     return o;
@@ -418,8 +442,8 @@
 
   /* ---------- çəkmə ---------- */
   function render(now, T) {
-    headG.style.webkitTransform = headG.style.transform = 'perspective(1900px) rotateY(' + cur.yaw.toFixed(2) + 'deg) rotateX(' + cur.pitch.toFixed(2) + 'deg) rotateZ(' + cur.roll.toFixed(2) + 'deg) translate(' + cur.hx.toFixed(1) + 'px,' + cur.hy.toFixed(1) + 'px)';
-    dim.style.opacity = cur.dimv.toFixed(3);
+    headG.style.webkitTransform = headG.style.transform = 'translate(' + (cur.hx + cur.yaw * 7).toFixed(1) + 'px,' + (cur.hy + cur.pitch * 6).toFixed(1) + 'px) rotate(' + cur.roll.toFixed(2) + 'deg) scale(' + Math.cos(cur.yaw * Math.PI / 180).toFixed(3) + ',1)';
+    dim.style.opacity = 0;
     var env = 0; if (now - blinkAt < 190) env = Math.sin((now - blinkAt) / 190 * Math.PI);
     var lt = Math.max(cur.lidTop, env * (1 - clamp(cur.lidBot * 2, 0, 1)));
     for (var i = 0; i < 2; i++) {
@@ -442,7 +466,7 @@
     var pp = cur.perk, w = Math.sin(T * 9) * pp;
     earL.style.webkitTransform = earL.style.transform = 'rotate(' + (-(6 * pp + 3 * w)).toFixed(2) + 'deg) scale(' + (1 + .12 * pp).toFixed(3) + ')';
     earR.style.webkitTransform = earR.style.transform = 'rotate(' + ((6 * pp + 3 * w)).toFixed(2) + 'deg) scale(' + (1 + .12 * pp).toFixed(3) + ')';
-    var fl = pp > .02 ? 'brightness(' + (1 + .55 * pp).toFixed(2) + ') saturate(1.2)' : 'none';
+    var fl = 'none';
     earL.style.webkitFilter = earL.style.filter = fl; earR.style.webkitFilter = earR.style.filter = fl;
     BlL.setAttribute('opacity', (cur.blush * .75).toFixed(3)); BlR.setAttribute('opacity', (cur.blush * .75).toFixed(3));
     // səs dalğaları (qulaqlara)
@@ -492,7 +516,7 @@
   var wl = null;
   function openFace() {
     if (isOpen) return;
-    isOpen = true; fs.style.display = 'block'; layout(); showUI();
+    isOpen = true; lastActive = Date.now(); fs.style.display = 'block'; layout(); showUI();
     try { var so = window.screen && screen.orientation; if (so && so.lock) { var p = so.lock('landscape'); if (p && p.catch) p.catch(function () {}); } } catch (e) {}
     try { var de = document.documentElement; if (de.requestFullscreen) { var q = de.requestFullscreen(); if (q && q.catch) q.catch(function () {}); } } catch (e) {}
     try { if (window.StatusBar && StatusBar.hide) StatusBar.hide(); } catch (e) {}
@@ -514,23 +538,28 @@
   document.addEventListener('backbutton', function (ev) { if (isOpen) { try { ev.preventDefault(); } catch (e) {} closeFace(); } }, false);
   btnX.addEventListener('click', function (ev) { ev.stopPropagation(); closeFace(); });
   btnStop.addEventListener('click', function (ev) { ev.stopPropagation(); try { window.__rbStop && window.__rbStop(); } catch (e) {} setEmote('surprise', 700); });
-  stage.addEventListener('click', function () { showUI(); setEmote('smile', 1800); });
+  stage.addEventListener('click', function () { var n = Date.now(); tapN = (n - tapT < 700) ? tapN + 1 : 1; tapT = n; lastActive = n; showUI(); if (tapN >= 3) { tapN = 0; setEmote('laugh', 2600); } else if (tapN === 2) setEmote('surprise', 700); else setEmote('smile', 1800); });
   rotEl.addEventListener('click', function (ev) { if (ev.target === rotEl) showUI(); });
   var rbBtn = $('robotBtn'); if (rbBtn) rbBtn.addEventListener('click', openFace);
 
   /* ---------- hadisələr ---------- */
   function setEmote(n, ms) { var now = Date.now(); emote = { n: n, t0: now, until: now + ms }; }
   var RX = {
-    sad: /(axmaq|pis robot|yaramaz|çirkin|cirkin|sən səhv|sen sehv|bezdim|dilini saxla|xoşum gəlmir|xosum gelmir|nə pis|ne pis)/i,
+    dance: /(rəqs|reqs|mahnı|mahni)/i,
+    search: /(axtar|baxıram|baxiram|ətrafa bax|etrafa bax|göz gəzdir|goz gezdir|otağa bax|otaga bax)/i,
+    sad: /(səfeh|sefeh|kütbeyin|kutbeyin|tənbəl|tenbel|yaramazsan|nifrət|nifret|get burdan|çıx get|cix get|sevmirəm|sevmirem|işə yaramaz|ise yaramaz|axmaq|pis robot|yaramaz|çirkin|cirkin|sən səhv|sen sehv|bezdim|dilini saxla|xoşum gəlmir|xosum gelmir|nə pis|ne pis)/i,
     laugh: /(ha ?ha|hə ?hə|he ?he|xa ?xa|gülməli|gulmeli|zarafat|lətifə|letife|komik|gülürəm|gulurem|güldüm|guldum|gül(?=$|[\s.,!?])|gulun?(?=$|[\s.,!?]))/i,
     praise: /(afərin|aferin|əla|ela(?=$|[\s.,!?])|əladır|bravo|super|mükəmməl|mukemmel|çox yaxşı|cox yaxsi|yaxşı iş|yaxsi is|ağıllısan|agilli|gözəlsən|gozelsen|molodets|təşəkkür|tesekkur|sağ ol|sag ol|bəyəndim|beyendim|sevirəm|sevirem|möhtəşəm|mohtesem|fantastik|çox gözəl|cox gozel|yaxşı robot|yaxsi robot|əfsanə|efsane)/i,
     smile: /(gülümsə|gulumse|salam|sabahın xeyir|axşamın xeyir|necəsən|necesen)/i,
     sleepy: /(gecən xeyrə|gecen xeyre|yuxla)/i,
-    yes: /^\s*(bəli|beli|hə|he|eşidirəm|esidirem|baş üstə|tamam|oldu|aydındır)(?=$|[\s,.!?])/i,
+    yes: /^\s*(buyur|dinləyirəm|dinleyirem|əlbəttə|elbette|bəli|beli|hə|he|eşidirəm|esidirem|baş üstə|tamam|oldu|aydındır)(?=$|[\s,.!?])/i,
     ownJoy: /(tapdım|tapdim|buldum|tapıldı)/i,
     ownSad: /(üzr istə|bağışla|bagisla|bacarmadım|bacarmadim|başa düşmədim|basa dusmedim)/i
   };
   function react(t, own) {
+    lastActive = Date.now();
+    if (RX.search.test(t)) searchUntil = Date.now() + (own ? 5000 : 3500);
+    if (RX.dance.test(t)) { setEmote('dance', 5200); return true; }
     if (RX.sad.test(t) || (own && RX.ownSad.test(t))) { setEmote('sad', 3200); return true; }
     if (RX.laugh.test(t)) { setEmote('laugh', 3400); return true; }
     if (RX.praise.test(t)) { setEmote(own ? 'smile' : 'joy', own ? 2200 : 3400); return true; }
@@ -541,10 +570,10 @@
   }
   window.RB = {
     open: openFace, close: closeFace,
-    hear: function () { hearUntil = Date.now() + 1400; hearSide = Math.random() < .5 ? -1 : 1; },
+    hear: function () { lastActive = Date.now(); hearUntil = Date.now() + 1400; hearSide = Math.random() < .5 ? -1 : 1; },
     wake: function () { setEmote('surprise', 900); hearUntil = Date.now() + 900; },
     say: function (t) {
-      t = String(t || '');
+      t = String(t || ''); sayText = t; sayStart = Date.now(); lastActive = sayStart;
       if (RX.yes.test(t)) { yesStart = Date.now(); yesUntil = yesStart + 1900; }
       react(t, true);
     },
@@ -552,10 +581,11 @@
     drive: function (c) {
       c = String(c || '').charAt(0);
       if (c === 'S') { driveUntil = 0; return; }
-      if ('FBLR'.indexOf(c) >= 0) { driveDir = c; driveUntil = Date.now() + 500; }
+      if ('FBLRQE'.indexOf(c) >= 0) { var n = Date.now(); if (c !== driveDir || n > driveUntil) driveStart = n; driveDir = c; driveUntil = n + 2200; lastActive = n; }
     },
     emote: function (n, ms) { setEmote(n, ms || 2000); },
     sync: function (f) {
+      if (F.sleep && !f.sleep) lastActive = Date.now(); if (f.awake || f.talk || f.think || f.mission) lastActive = Date.now();
       F = f; var aw = !!f.awake;
       if (aw && !prevAwake) window.RB.wake();
       prevAwake = aw;
@@ -2823,7 +2853,7 @@
   setInterval(function () {                                                           // robot üzü: vəziyyət
     try { if (window.RB) RB.sync({ talk: isSpeaking, think: busy > 0 && !isSpeaking, search: !!mission && /tap|yanına|hədəf|qapı|axtar/i.test(mission.title || ''), sleep: !voiceOn, tired: isRateLimited, awake: Date.now() < activeUntil, mission: !!mission }); } catch (e) {}
   }, 150);
-  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v57 ✓';
+  var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v58 ✓';
 })();
 </script>
 <script>
