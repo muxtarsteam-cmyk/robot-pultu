@@ -2157,15 +2157,20 @@
     var rn = norm(robotName || ''); if (!rn || !t) return false;
     if (t === rn) return true;
     if (isZikoName(rn) && t.length >= 4 && t.length <= 5 && /^[zsc]/.test(t) && /[ko]$/.test(t) && lev(t, 'ziko') <= 1) return true;
-    if (rn.length >= 4 && rn.length <= 5 && t.length === rn.length && t[0] === rn[0] && lev(t, rn) <= 1) return true;
-    if (rn.length >= 6 && t.length >= 5 && lev(t, rn) <= 1) return true;
+    var pa = phon(t), pb = phon(rn);                                  // səs oxşarlığı: q/k/g, s/z/c, ikiqat hərf, y/i eyni sayılır
+    if (pa.length >= 3 && pa === pb) return true;
+    if (pb.length >= 4 && pb.length <= 5 && pa.length >= 3 && pa[0] === pb[0] && lev(pa, pb) <= 1) return true;
+    if (pb.length >= 6 && pa.length >= 4 && lev(pa, pb) <= 2) return true;
     return false;
+  }
+  function phon(s) {
+    return String(s || '').replace(/[qg]/g, 'k').replace(/[cz]/g, 's').replace(/x/g, 'h').replace(/w/g, 'v').replace(/y/g, 'i').replace(/(.)\1+/g, '$1');
   }
   function hasWake(text) {
     var rn = norm(robotName || ''), full = norm(text); if (!rn || !full) return false;
     if (rn.indexOf(' ') >= 0) return (' ' + full + ' ').indexOf(' ' + rn + ' ') >= 0;
     var t = full.split(' '), i;
-    for (i = 0; i + 1 < t.length; i++) if (t[i].length <= 3 && t[i + 1].length <= 4 && (t[i] + t[i + 1]) === rn) return true;   // "zi ko"
+    for (i = 0; i + 1 < t.length; i++) if (t[i].length <= 4 && t[i + 1].length <= 5 && isWakeToken(t[i] + t[i + 1])) return true;   // "zi ko"
     for (i = 0; i < t.length; i++) if (isWakeToken(t[i])) return true;
     return false;
   }
@@ -2548,7 +2553,7 @@
     var pcm = downsample(concat(chunks), curRate, 16000);
     if (pcm.length < 16000 * 0.3) { apiStats.skipped++; updateApiInfo(); return; }
     var e2 = 0, k; for (k = 0; k < pcm.length; k += 8) e2 += pcm[k] * pcm[k];
-    if (Math.sqrt(e2 / (pcm.length / 8)) < 0.012) { apiStats.skipped++; updateApiInfo(); return; }     // demək olar ki, səssiz
+    if (Math.sqrt(e2 / (pcm.length / 8)) < 0.006) { apiStats.skipped++; updateApiInfo(); return; }     // demək olar ki, səssiz
     if (pcm.length > 16000 * 20) pcm = pcm.subarray(0, 16000 * 20);
     var pk = 0, q; for (q = 0; q < pcm.length; q++) { var av = pcm[q] < 0 ? -pcm[q] : pcm[q]; if (av > pk) pk = av; }
     if (pk > 0.005 && pk < 0.7) { var gain = Math.min(12, 0.85 / pk); for (q = 0; q < pcm.length; q++) pcm[q] *= gain; }      // sakit danışıq gücləndirilir: tanıma daha dəqiq olur
@@ -2575,7 +2580,7 @@
     var s = speech, meta = { voicedMs: voicedMs, snr: noise > 0 ? peakRms / noise : 99 }, dens = speechMs ? voicedMs / speechMs : 0;
     speaking = false; speech = []; silenceMs = 0; onsetN = 0;
     if (!s.length) return;
-    if (meta.voicedMs < 280 || dens < 0.18 || meta.snr < 3) { apiStats.skipped++; updateApiInfo(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle'); return; }   // nitq deyil: tıqqıltı, küy, nəfəs
+    if (meta.voicedMs < 220 || dens < 0.15 || meta.snr < 2.5) { apiStats.skipped++; updateApiInfo(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle'); return; }   // nitq deyil: tıqqıltı, küy, nəfəs
     if (Date.now() < activeUntil && voiceOn && !isSpeaking) updateVoiceBtn('send');                  // əmr gözlənilirdi: ekran dərhal "emal edilir" göstərsin
     else if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
     handleUtterance(s, meta);
@@ -2588,7 +2593,7 @@
     var n = chunk.length, sum = 0, zc = 0, sgn = 0, i, x, s2;
     for (i = 0; i < n; i++) { x = chunk[i]; sum += x * x; s2 = x > 0.002 ? 1 : x < -0.002 ? -1 : 0; if (s2 !== 0) { if (sgn !== 0 && s2 !== sgn) zc++; sgn = s2; } }
     var rms = Math.sqrt(sum / n), ms = n / rate * 1000, crHz = zc * rate / (2 * n);
-    var floor = Math.max(0.018, noise * 4);
+    var floor = Math.max(0.010, noise * 3);
     var voiced = rms > floor && crHz > 70 && crHz < 6500;                                           // insan nitqi diapazonu
     if (!speaking) {
       noise = rms < noise ? noise * 0.9 + rms * 0.1 : noise * 0.995 + Math.min(rms, floor) * 0.005;
@@ -2613,7 +2618,7 @@
     micStarting = true;
     micPermission(function (ok) {
       if (!ok) { micStarting = false; warn('Mikrofon icazəsi yoxdur. Ayarlar, Tətbiqlər, Robot Pultu, İcazələr, Mikrofon.', true); stopVoice(); return; }
-      var tries = 0, CONS = [{ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }, { audio: true }];
+      var tries = 0, CONS = [{ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }, { audio: true }];
       function attempt() {
         tries++;
         return navigator.mediaDevices.getUserMedia(CONS[(tries - 1) % CONS.length]).catch(function (e) { if (tries >= 4) throw e; return sleep(600).then(attempt); });
