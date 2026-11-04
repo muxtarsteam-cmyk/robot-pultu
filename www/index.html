@@ -851,7 +851,7 @@
   function holdTick() {
     var H = hdgHold, now = Date.now(); if (!H.on || H.dead) return;
     if (now - H.lastSend > 900) { holdEnd('S'); return; }
-    if (!(gy.alpha !== null && now - gy.lastAt < 500)) { trimWrite(0); holdInfo('Düz getmə: giroskop məlumatı gəlmir, düzəliş yoxdur'); return; }
+    if (!(gy.alpha !== null && (gyAge() < 1500 || now - H.t0 < 1500))) { trimWrite(0); holdInfo('Düz getmə: giroskop məlumatı gəlmir, düzəliş yoxdur'); return; }
     var dt = Math.min(0.2, (now - H.last) / 1000); H.last = now;
     var err = angleDiff(axisHeading(gy.alpha, gy.beta, gy.gamma, H.axis).h, H.target);   // + = hədəfdən sağa sapıb (əllə itələnəndə də)
     H.dErr = 0.6 * H.dErr + 0.4 * (dt > 0 ? (err - H.lastErr) / dt : 0); H.lastErr = err;
@@ -1563,7 +1563,8 @@
   }
   function pickAxis(hy, hz) { return gyroMode === 'flat' ? 'y' : gyroMode === 'upright' ? 'z' : (hy.mag >= hz.mag ? 'y' : 'z'); }
   function f1(x) { return x == null || isNaN(x) ? '—' : (Math.round(x * 10) / 10).toFixed(1); }
-  function gyroReady() { return gy.on && connected && !!BT && gy.alpha !== null && (Date.now() - gy.lastAt) < 800; }
+  function gyAge() { return Date.now() - Math.max(gy.lastAt || 0, gy.rateAt || 0); }                  // Chrome orientasiya hadisəsini yalnız DƏYİŞİKLİKDƏ göndərir: dayanan robotda hadisə gəlməməsi nasazlıq deyil
+  function gyroReady() { return gy.on && connected && !!BT && gy.alpha !== null && (Date.now() - gy.lastAt) < 60000; }
 
   function renderGyro(force) {
     var now = Date.now(); if (!force && now - gy.rendered < 100) return; gy.rendered = now;
@@ -1584,7 +1585,7 @@
     } else {
       tg.style.display = 'none'; $('gyProg').style.width = '0%'; $('gyTurn').textContent = gy.lastRes || '—';
     }
-    $('gyState').textContent = !gy.on ? 'Giroskop aktiv deyil' : (now - gy.lastAt < 800 ? '✅ Giroskop işləyir' + (gy.abs ? ' (mütləq)' : ' (nisbi)') + (now - gy.rateAt < 500 ? ' + sürət sensoru' : '') : '⚠ Məlumat gəlmir');
+    $('gyState').textContent = !gy.on ? 'Giroskop aktiv deyil' : (gyAge() < 4000 ? '✅ Giroskop işləyir' + (gy.abs ? ' (mütləq)' : ' (nisbi)') + (now - gy.rateAt < 500 ? ' + sürət sensoru' : '') : '⚠ Məlumat gəlmir');
     $('gyBtn').textContent = gy.on ? '✅ Giroskop aktivdir' : '🧭 Giroskopu aktivləşdir (icazə ver)';
   }
 
@@ -1631,7 +1632,7 @@
   function onMotion(e) {
     var rr = e.rotationRate; if (!rr || rr.alpha == null || rr.beta == null || rr.gamma == null) return;
     var now = performance.now(), dt = gy.rateT ? Math.min(0.2, (now - gy.rateT) / 1000) : 0; gy.rateT = now; gy.rateAt = Date.now();
-    if (!gt || gy.alpha == null || Date.now() - gy.lastAt > 400) return;
+    if (!gt || gy.alpha == null || Date.now() - gy.lastAt > 60000) return;
     var r = Math.PI / 180, cx = Math.cos(gy.beta * r), sx = Math.sin(gy.beta * r), cy = Math.cos(gy.gamma * r), sy = Math.sin(gy.gamma * r);
     var yawCCW = (-cx * sy) * rr.beta + sx * rr.gamma + (cx * cy) * rr.alpha;   // bucaq sürətinin şaquli oxa proyeksiyası (saat əqrəbinin əksinə müsbət)
     gt.cumR += (-yawCCW) * dt * gt.sign;                                          // sağa (saat əqrəbi) müsbət
@@ -1674,7 +1675,7 @@
   setInterval(function () {
     var n = Date.now(); if (n - gyReAt < 2500) return;
     if (!gy.on) { if (!needPerm) { gyReAt = n; gyroStart(); } }
-    else if (n - gy.lastAt > 1500) gyroReattach();
+    else if (gyAge() > 4000) gyroReattach();
   }, 1500);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) gyroReattach(); });
   window.addEventListener('focus', function () { gyroReattach(); });
@@ -1701,7 +1702,7 @@
           chk();
           var now = Date.now();
           if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı'); }
-          if (now - gy.lastAt > 800) { stalled = true; throw new Error('Giroskop məlumatı kəsildi, robot dayandı'); }
+          if (gyAge() > 1500 && now - t0 > 2500) { stalled = true; throw new Error('Robot tərpənmir və giroskopdan məlumat gəlmir: motoru/sürəti və giroskopu yoxlayın'); }
           if (cur.cum <= -5) { wrongCum = cur.cum; break; }                                     // robot əks tərəfə dönür
           if (now - cur.progAt > 800) {                                                         // tıxanma: robot yerindən tərpənmir
             if (turnAuto && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); cur.bumped++; sset('turn_pct', turnPct); showPct(); send(pctCmd()); cur.progAt = now; }
