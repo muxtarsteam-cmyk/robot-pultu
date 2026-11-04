@@ -1595,12 +1595,15 @@
   // ---- Dönmə bucağının qiymətləndirilməsi: HƏR sensor hadisəsində çağırılır, hədəfə çatan AN S göndərir ----
   function evalTurn() {
     if (!gt) return;
-    gt.cum = gt.rateOk ? Math.max(gt.cumO, gt.cumR) : gt.cumO;                // iki müstəqil ölçmədən hansı irəlidədirsə, ona görə dayan (ötmə riskinə qarşı)
+    if (gt.rateOk) {                                                           // iki müstəqil ölçmə: (1) bucaq sürəti inteqralı = FİZİKİ sağa-sol (telefonun necə qoyulmasından asılı deyil), (2) kompas/orientasiya
+      var dRO = Math.abs(gt.cumR - gt.cumO);
+      gt.cum = dRO <= Math.max(4, 0.12 * Math.abs(gt.cumR)) ? (gt.cumR + gt.cumO) / 2 : gt.cumR;   // razılaşırlarsa orta, ziddiyyət varsa fiziki ölçməyə etibar et (istiqamət səhvi buradan gəlirdi)
+    } else gt.cum = gt.cumO;
     if (gt.done) {
       if (!gt.escalated && gt.cum - gt.cumAtDone > 20 && Date.now() - gt.doneAt < 1500) { gt.escalated = true; stopBurst(); warn('Robot S əmrindən sonra da dönür! Arduino-ya robot_4wd_v14.ino yükləndiyini və S əmrinin çatdığını yoxlayın.', true); }
       return;
     }
-    if (gt.rateOk && !gt.rateChecked && gt.cumO >= 15) { gt.rateChecked = true; if (gt.cumR > gt.cumO * 1.6) gt.rateOk = false; }   // sürət sensoru anormal böyük göstərirsə, ona etibar etmə
+    if (gt.rateOk && !gt.rateChecked && gt.cumO >= 15 && gt.cumR > 0) { gt.rateChecked = true; if (gt.cumR > gt.cumO * 1.6 || gt.cumR < gt.cumO * 0.5) gt.rateOk = false; }   // vahid/miqyas səhvi: yalnız ölçmə eyni istiqamətdə olanda yoxlanır   // sürət sensoru anormal böyük göstərirsə, ona etibar etmə
     if (gt.cum - gt.mark >= 0.4) { gt.mark = gt.cum; gt.progAt = Date.now(); }
     if (gt.target - gt.cum <= gt.lead) {                                       // HƏDƏF BUCAĞA ÇATDI (və ya keçdi): dərhal Dayan
       gt.done = true; gt.cumAtDone = gt.cum; gt.doneAt = Date.now(); stopBurst();
@@ -1675,7 +1678,7 @@
           var now = Date.now();
           if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı'); }
           if (now - gy.lastAt > 800) { stalled = true; throw new Error('Giroskop məlumatı kəsildi, robot dayandı'); }
-          if (cur.cum <= -12) { wrongCum = cur.cum; break; }                                     // robot əks tərəfə dönür
+          if (cur.cum <= -5) { wrongCum = cur.cum; break; }                                     // robot əks tərəfə dönür
           if (now - cur.progAt > 1500) {                                                         // tıxanma: robot yerindən tərpənmir
             if (turnAuto && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); cur.bumped++; sset('turn_pct', turnPct); showPct(); send(pctCmd()); cur.progAt = now; }
             else if (cur.kicks < 3) { cur.kicks++; send('K'); cur.progAt = now; }               // qısa başlanğıc impulsunu təkrarla
@@ -1695,7 +1698,7 @@
         if (retried) { stalled = true; throw new Error('Robot hər iki istiqamətdə əks tərəfə dönür. Telefonun robota bərk bərkidildiyini yoxlayın'); }
         turnInvert = !turnInvert; sset('turn_invert', turnInvert ? '1' : '0'); $('gyInv').checked = turnInvert;
         note('Robot əks tərəfə dönürdü: istiqamət avtomatik düzəldildi, yenidən cəhd edilir');
-        return await gyroTurn(dir, deg + Math.abs(wrongCum), true);
+        return await gyroTurn(dir, deg + Math.abs(Math.min(wrongCum, cur.cum)), true);      // robot əks tərəfə nə qədər getdisə, o qədər artıq döndür
       }
       await wait(450);                                                                           // robot tam dayansın, qalıq bucağı ölç
       var err = cur.cum - deg;
