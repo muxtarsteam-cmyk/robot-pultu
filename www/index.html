@@ -1531,6 +1531,7 @@
   function showPct() { $('turnPct').value = turnPct; $('turnPctVal').textContent = Math.round(turnPct) + '%'; $('turnPwmVal').textContent = pctToPwm(turnPct); }
   if (sget('turn_auto_v2', '0') !== '1') { sset('turn_auto_v2', '1'); turnAuto = true; sset('turn_auto', '1'); }
   if (sget('turn_v3', '0') !== '1') { sset('turn_v3', '1'); if (turnPct < 40) { turnPct = 45; sset('turn_pct', 45); } }          // zəif dönmə sürəti: bir dəfəlik 45%-ə qaldırılır
+  if (sget('lat_v1', '0') !== '1') { sset('lat_v1', '1'); if (apiGap > 1500) { apiGap = 1500; sset('api_gap', 1500); try { $('apiGap').value = 1500; } catch (e) {} } }
   showPct(); $('turnAuto').checked = turnAuto;
   $('turnPct').addEventListener('input', function () {
     turnPct = +this.value; sset('turn_pct', turnPct); showPct();
@@ -2505,7 +2506,7 @@
       '- If there is no clear human speech output {"text":"","confidence":0}.\n' +
       '- "confidence" is a number from 0 to 1: how sure you are that every word is exactly right (below 0.5 if any part was muffled, cut off or guessed).\n' +
       'Reply ONLY JSON: {"text":"...","confidence":0.0-1.0}';
-    var t = await gemini([{ text: p }, audioPart(b64)], { json: true, maxTokens: 300, nosys: true, temp: 0, fast: true, timeout: 12000, pref: VS.acc === 'hi' ? 'gemini-3.5-flash' : '' });
+    var t = await gemini([{ text: p }, audioPart(b64)], { json: true, maxTokens: 120, nosys: true, temp: 0, fast: true, timeout: 6000, pref: VS.acc === 'hi' ? 'gemini-3.5-flash' : '' });
     var r = parseJSON(t) || {};
     var text = String(r.text == null ? '' : r.text).trim();
     var cf = parseFloat(r.confidence); return { text: text, clear: isNaN(cf) ? true : cf >= 0.5 };
@@ -2516,10 +2517,10 @@
   }
   async function routeAudio(wav, meta) {
     var b64 = await blobToBase64(wav), active = Date.now() < activeUntil;
-    var tr = await transcribeStrict(b64), text = tr.text;
+    var tT0 = Date.now(), tr = await transcribeStrict(b64), text = tr.text; dbgWhy = 'Gemini ' + (Date.now() - tT0) + ' ms';
     if (!text || ((isJunk(text) || isEcho(text)) && !(isStopWord(text) && !stopIsEcho(text)))) { dbgWhy = 'Gemini boş/küy yazdı: "' + (text || '') + '"'; return; }
     var called = !!robotName && hasWake(text), stopWord = isStopWord(text);
-    dbgWhy = 'Gemini yazdı: "' + text + '" → ad ' + (called ? 'TAPILDI' : 'tapılmadı');
+    dbgWhy = 'Gemini yazdı (' + (Date.now() - tT0) + ' ms): "' + text + '" → ad ' + (called ? 'TAPILDI' : 'tapılmadı');
     if (!called && !active && !stopWord) { lastVoice.textContent = text.slice(0, 140); heardLog(text); pushOverheard(text); return; }       // çağırılmayıb: yalnız yazılır
     if (!called && !stopWord && meta && (meta.voicedMs < 350 || meta.snr < 3.5)) return;                                                       // real nitq izi yoxdur
     var restTxt = called ? stripName(text) : text;
@@ -2660,15 +2661,16 @@
       transcribe(wav).catch(function () { return ''; }).then(function (txt) { lastVoice.textContent = txt.slice(0, 140) || '—'; busy--; micUpdate(); w.res(txt); });
       return;
     }
-    if (routing) { pendingU = { wav: wav, meta: meta, t: Date.now() }; return; }                       // eyni anda bir sorğu; ən yenisi gözləyir
-    runRoute(wav, meta);
+    if (routing && Date.now() - routeStartT < 2500) { pendingU = { wav: wav, meta: meta, t: Date.now() }; return; }   // əvvəlki sorğu yenicə başlayıbsa ən yenisi gözləyir
+    runRoute(wav, meta);                                                                                  // əvvəlki sorğu 2,5 san-dən çox çəkibsə (yavaş şəbəkə), yeni səs gözləmir: PARALEL işlənir
   }
+  var routeStartT = 0;
   function runRoute(wav, meta) {
-    routing = true; busy++; micUpdate();
+    routing = true; routeStartT = Date.now(); busy++; micUpdate();
     routeAudio(wav, meta).catch(function (e) { warn(e && e.message ? e.message : 'Xəta', true); chatLine('sys', e && e.message ? e.message : 'Xəta'); }).then(function () {
       busy--; routing = false; micUpdate();
       var p = pendingU; pendingU = null;
-      if (p && Date.now() - p.t < 12000) runRoute(p.wav, p.meta);
+      if (p && Date.now() - p.t < 6000) runRoute(p.wav, p.meta);
       else if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
     });
   }
@@ -2703,7 +2705,7 @@
       if (voiced) { voicedMs += ms; if (rms > peakRms) peakRms = rms; }
       if (rms > floor * 0.7) silenceMs = 0; else silenceMs += ms;
       if (speechMs > 6000 && voicedMs / speechMs < 0.12) { resetVad(); return; }                    // fasiləsiz küy
-      var hang = speechMs < 1500 ? Math.min(pauseMs, 500) : speechMs < 3500 ? Math.min(pauseMs, 750) : pauseMs;     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
+      var hang = speechMs < 1500 ? Math.min(pauseMs, 350) : speechMs < 3500 ? Math.min(pauseMs, 550) : Math.min(pauseMs, 900);     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
       if (silenceMs > hang || speechMs > 20000) finishUtterance();
     }
   }
