@@ -742,7 +742,7 @@
   function doConnect(d) {
     note('Qoşulur: ' + (d.name || d.address) + ' ...');
     BT.connect(d.address, [SPP], function () {
-      devAddr = d.address; devName = d.name || d.address;
+      devAddr = d.address; devName = d.name || d.address; sset('bt_last', d.address);
       setConnected(true, devName); note('');
     }, function (err) {
       var was = connected;
@@ -759,7 +759,8 @@
         BT.list(function (devices) {
           if (!devices || !devices.length) { warn('Cütləşdirilmiş cihaz yoxdur. Telefon ayarlarında HC-05 ilə cütləşin.'); return; }
           var hc = devices.filter(function (d) { return /hc-?0[56]/i.test(d.name || ''); });
-          if (hc.length === 1) doConnect(hc[0]); else showPicker(devices, doConnect);
+          var lastD = devices.filter(function (d) { return d.address === sget('bt_last', ''); });
+          if (hc.length === 1) doConnect(hc[0]); else if (lastD.length) doConnect(lastD[0]); else showPicker(devices, doConnect);
         }, function (e) { warn('Cihaz siyahısı alınmadı. Bluetooth icazəsini yoxlayın.'); });
       }, function (m) { warn(m || 'Bluetooth açılmadı'); });
     });
@@ -1315,10 +1316,10 @@
     var now = Date.now(); minuteHits = minuteHits.filter(function (t) { return now - t < 60000; });
     if (dayRec.day !== pacificDay()) { dayRec = { day: pacificDay(), n: 0 }; sset('api_day', JSON.stringify(dayRec)); }
     var was = isRateLimited; isRateLimited = now < quotaUntil;
-    var pm = minuteHits.length / rpmLimit * 100, pd = dayRec.n / rpdLimit * 100, pct = Math.min(100, Math.round(Math.max(pm, pd)));
-    if (isRateLimited) pct = 100;
+    var pd = Math.min(100, dayRec.n / rpdLimit * 100), pct = Math.round(pd), bar = pd;
+    if (isRateLimited) { pct = 100; bar = 100; }
     var fill = $('limFill'), txt = $('limTxt');
-    fill.style.width = pct + '%';
+    fill.style.width = bar.toFixed(1) + '%';
     fill.className = 'limfill' + (isRateLimited ? ' full' : pct >= 85 ? ' hot' : pct >= 60 ? ' warn' : '');
     if (isRateLimited) { txt.className = 'limtxt full'; txt.textContent = 'Limit dolub. Təxmini bərpa müddəti: ' + fmtWait((quotaUntil - now) / 1000); }
     else { txt.className = 'limtxt'; txt.textContent = 'Gemini limiti: ' + pct + '% · dəqiqədə ' + minuteHits.length + '/' + rpmLimit + ' · gündə ' + dayRec.n + '/' + rpdLimit + ' (təxmini)'; }
@@ -1388,7 +1389,7 @@
       if (r.status === 429) {
         var bt = ''; try { bt = await r.text(); } catch (e) {}
         var rd = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(bt), waitS = rd ? Math.ceil(+rd[1]) : 0;
-        if (/PerDay|per day|daily/i.test(bt)) waitS = Math.max(waitS, secsToPacificMidnight());      // gündəlik limit: gecə yarısına qədər (Pasifik vaxtı)
+        if (/PerDay|per day|daily/i.test(bt)) { waitS = Math.max(waitS, secsToPacificMidnight()); if (dayRec.n >= 5) { rpdLimit = dayRec.n; sset('rpd_limit', rpdLimit); try { $('rpdLimit').value = rpdLimit; } catch (e) {} } }      // gündəlik limit: gecə yarısına qədər (Pasifik vaxtı)
         if (!waitS) waitS = 60;
         if (retry429 < 1 && waitS <= 5) { retry429++; await sleep(waitS * 1000); i--; continue; }
         setRateLimit(waitS * 1000 + 1000);
@@ -2243,7 +2244,8 @@
 
   // ---------- ayarlar ----------
   var SRC = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (sget('eco_v1', '0') !== '1') { sset('eco_v1', '1'); VS.ctxOn = false; sset('sy_ctx', '0'); VS.acc = 'fast'; sset('sy_acc', 'fast'); rpmLimit = 6; sset('rpm_limit', 6); rpdLimit = 120; sset('rpd_limit', 120); apiGap = 4000; sset('api_gap', 4000); if (SRC) { VS.engine = 'browser'; sset('sy_engine', 'browser'); } }   // Gemini qənaəti: bir dəfə tətbiq olunur
+  if (sget('eco_v2', '0') !== '1') { sset('eco_v2', '1'); if (rpdLimit <= 120) { rpdLimit = 500; sset('rpd_limit', 500); } if (rpmLimit <= 6) { rpmLimit = 10; sset('rpm_limit', 10); } try { $('rpdLimit').value = rpdLimit; $('rpmLimit').value = rpmLimit; } catch (e) {} }
+  if (sget('eco_v1', '0') !== '1') { sset('eco_v1', '1'); VS.ctxOn = false; sset('sy_ctx', '0'); VS.acc = 'fast'; sset('sy_acc', 'fast'); rpmLimit = 10; sset('rpm_limit', 10); rpdLimit = 500; sset('rpd_limit', 500); apiGap = 4000; sset('api_gap', 4000); if (SRC) { VS.engine = 'browser'; sset('sy_engine', 'browser'); } }   // Gemini qənaəti: bir dəfə tətbiq olunur
   if (!SRC && VS.engine === 'browser') VS.engine = 'gemini';
   (function () {
     $('voiceEngine').value = VS.engine; $('vsVoice').value = VS.voice; $('vsGender').value = VS.gender; $('vsLogMax').value = Math.max(1, Math.min(100, VS.logMax || 4)); $('vsAcc').value = VS.acc; $('vsVoiceName').value = ttsVoiceName; $('vsAwake').value = VS.awake; $('vsSpeak').checked = VS.speakOn; $('vsChat').checked = VS.chatMode; $('vsCtx').checked = VS.ctxOn;
@@ -2463,6 +2465,7 @@
       lastHeardN = hn0; lastHeardT = Date.now(); lastVoice.textContent = text.slice(0, 140); chatLine('me', text); remember('İstifadəçi', text); ack(qr); return;
     }
     if (!tr.clear && !stopWord && norm(stripName(text)).length >= 3) { lastVoice.textContent = text.slice(0, 140) + ' (?)'; chatLine('me', text + ' (?)'); if (!(acting || mission)) askRepeat(); return; }   // əmin deyil: tapmır, soruşur
+    var bv = btVoice(text); if (bv && (called || active)) { btVoiceExec(bv, text); return; }
     var lc = localSimpleCommand(text);                                                                                                       // sadə hərəkət əmri (irəli, sağa 45 dərəcə dön...): Gemini-yə ikinci sorğu olmadan dərhal icra
     if (lc && (lc.drive === 'S' || called || active) && !(mission && lc.drive !== 'S')) { execLocal(lc, text); return; }
     var t = await gemini([{ text: routerPrompt(active, true) + '\nUser said: ' + JSON.stringify(text) }], { json: true, maxTokens: 900, fast: true, timeout: 9000 });
@@ -2476,6 +2479,25 @@
     var r = parseJSON(t); if (!r) return;
     r.heard = text;
     await dispatch(r, { text: text, called: called });
+  }
+  // ---------- Səslə Bluetooth: «Bluetooth-a qoşul» / «Bluetooth-dan ayrıl» ----------
+  function btVoice(text) {
+    var n = norm(text);
+    if (!/(blu\s?[tl]\w*|bluetooth|blutuz|bluetus|bluetut)/.test(n)) return null;
+    if (/\b(ayril\w*|ayir\w*|kes\w*|qopar\w*|qirt\w*|ayrilsin)\b/.test(n)) return 'off';
+    if (/\b(qosul\w*|qos\w*|baglan\w*|birles\w*|aktiv\w*)\b/.test(n)) return 'on';
+    return null;
+  }
+  function btVoiceExec(kind, heard) {
+    lastVoice.textContent = heard.slice(0, 140) + ' ⚡'; chatLine('me', heard + ' ⚡'); remember('İstifadəçi', heard);
+    apiStats.local++; updateApiInfo();
+    if (kind === 'on') {
+      if (connected) { ack('Artıq qoşuluyam.'); return; }
+      ack('Bluetooth-a qoşuluram.'); connect();
+    } else {
+      if (!connected) { ack('Bluetooth artıq qoşulu deyil.'); return; }
+      disconnect(); ack('Bluetooth-dan ayrıldım.');
+    }
   }
   function execLocal(cmd, heard) {                                   // sadə hərəkət əmri: Gemini-siz
     if (acting && cmd.drive !== 'S') return;
@@ -2497,6 +2519,7 @@
     if (replyWaiter) { var w = replyWaiter; replyWaiter = null; clearTimeout(w.t); lastVoice.textContent = text.slice(0, 140); w.res(text); return; }
     if (called && !isStopWord(text)) { var qr2 = quickReply(stripName(text)); if (qr2) { chatLine('me', text); remember('İstifadəçi', text); ack(qr2); return; } }
     var cmd = null, hk = '', i;
+    for (i = 0; i < alts.length; i++) { var bv2 = btVoice(alts[i]); if (bv2 && (called || active)) { btVoiceExec(bv2, alts[i]); return; } }
     for (i = 0; i < alts.length && !cmd; i++) { var cc = localSimpleCommand(alts[i]); if (cc) { cmd = cc; hk = alts[i]; } }
     if (cmd && (cmd.drive === 'S' || called || active)) { execLocal(cmd, hk); return; }
     if (!called && !active) { heardLog(text); pushOverheard(text); return; }
