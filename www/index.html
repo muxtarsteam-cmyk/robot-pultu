@@ -241,7 +241,7 @@
     <input type="range" id="turnPct" min="0" max="100" step="1" value="25" style="width:100%;margin-top:8px">
     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span>0% (söndürülüb)</span><span>50%</span><span>100% (tam güc)</span></div>
     <div style="font-size:11px;color:var(--muted);margin-top:4px">Arduino-ya gedən PWM: <b id="turnPwmVal" style="color:var(--text)">64</b> / 255</div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="turnAuto"> Robot tıxananda sürəti avtomatik artır (+5%)</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="turnAuto" checked> Dönmə sürəti avtomatik tənzimlənsin (tıxananda +5%, titrəyəndə/hədəfi keçəndə −5%)</label>
     <div class="row"><button id="turnTest" style="flex:1">▶ Dönmə sürətini sına (1.5 san)</button><button id="pwmTest" style="flex:1">🔧 PWM testi (Arduino)</button></div>
     <div id="btEcho" class="hint">Arduino cavabı: —</div>
     <div class="hint">Dönmə rejimi (Spin / Pivot) bütün dönmələrə (düymələr, səs, giroskop) tətbiq olunur. Bu sürət ◀ ▶ düymələrinə və giroskoplu dönməyə ("sağa dön", "45 dərəcə sola dön") tətbiq olunur. Giroskop aktiv deyilsə, səsli dönmə vaxtla və adi sürətlə gedir. 0% = motor sönür (PWM 0), 100% = tam güc (PWM 255). İrəli/geri sürəti ayrıdır. Sürəti dönmə zamanı da dəyişə bilərsiniz.</div>
@@ -864,7 +864,7 @@
     } else H.refT = 0;
     if (Math.abs(err) > 1 && Math.abs(err) <= 15) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));   // motor fərqi yalnız kiçik sapmalarda öyrənilir
     var tr = Math.max(-95, Math.min(95, H.bias - STR_KP * err - STR_KD * H.dErr));
-    if (now - H.t0 < 500) { H.lastErr = err; H.dErr = 0; tr = Math.max(-40, Math.min(40, H.bias)); }   // start anı: giroskop silkələnir, 0,5 san düzəliş vurulmur      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
+    if (now - H.t0 < 350) { H.lastErr = err; H.dErr = 0; tr = Math.max(-40, Math.min(40, H.bias)); }   // start anı: giroskop silkələnir, 0,5 san düzəliş vurulmur      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
     trimWrite(tr);
     holdInfo('Düz getmə: hədəf ' + f1(H.target) + '° · sapma ' + (err > 0 ? '+' : '') + f1(err) + '° · düzəliş ' + Math.round(tr * (turnInvert ? -1 : 1)) + '%');
   }
@@ -1498,15 +1498,17 @@
   // Əmri vaxt bitənə qədər 300 ms-dən bir təkrarlayır, sonra DƏRHAL Dayan (S) göndərir (iki dəfə, itkiyə qarşı)
   var KEEP_MS = 300;
   async function holdFor(cmd, ms) {
-    var end = Date.now() + ms;
+    var end = Date.now() + ms, soft = (cmd === 'F' || cmd === 'B') && ms >= 1500 && ms < 100000, softAt = end - 700, softDone = false;
     try {
       chk(); send(cmd);
       for (;;) {
         var left = end - Date.now(); if (left <= 0) break;
-        await wait(Math.min(KEEP_MS, left));
+        var stepMs = Math.min(KEEP_MS, left); if (soft && !softDone) stepMs = Math.max(20, Math.min(stepMs, softAt - Date.now()));
+        await wait(stepMs);
+        if (soft && !softDone && Date.now() >= softAt) { softDone = true; send('V80\n'); }          // dayanmağa 0,7 san qalmış sürəti yavaş-yavaş azalt, sonra dayan
         if (end - Date.now() > 0) send(cmd);
       }
-    } finally { send('S'); setTimeout(function () { send('S'); }, 120); }
+    } finally { send('S'); setTimeout(function () { send('S'); }, 120); if (softDone) setTimeout(function () { send(driveCmd()); }, 400); }
   }
   async function moveFor(cmd, ms) { chk(); await holdFor(cmd, connected ? ms : Math.min(ms, 200)); await wait(connected ? 450 : 100); }
 
@@ -1516,7 +1518,7 @@
   var gt = null;                                           // aktiv dönmə: {dir, sign, target, cum, ...}
   var gyroLead = +sget('gyro_lead3', 0);                 // əyləc zamanı əlavə dönməni əvvəlcədən çıxmaq üçün (dərəcə), özü öyrənir (ultra-yavaş sürətdə çox kiçikdir)
   var turnPct = Math.max(0, Math.min(100, +sget('turn_pct', 25)));    // dönmə sürəti 0-100% (Arduino: P<PWM 0..255>\n)
-  var turnAuto = sget('turn_auto', '0') === '1';                        // tıxananda avtomatik artırma (standart: söndürülüb)
+  var turnAuto = sget('turn_auto', '1') === '1';                        // tıxananda avtomatik artırma (standart: söndürülüb)
   var liveAt = {};
   function liveSend(key, fn) { var n = Date.now(); if (connected && BT && n - (liveAt[key] || 0) >= 80) { liveAt[key] = n; send(fn()); } }
   function pctToPwm(pct) { return Math.max(0, Math.min(255, Math.round((pct / 100) * 255))); }   // 0% -> 0, 100% -> 255
@@ -1526,6 +1528,7 @@
   function slowCmd(dir) { return ((dir === 'R') !== turnInvert) ? 'E' : 'Q'; }    // istənilən istiqamət -> Arduino-ya gedən Q/E
   $('gyMode').value = gyroMode;
   function showPct() { $('turnPct').value = turnPct; $('turnPctVal').textContent = Math.round(turnPct) + '%'; $('turnPwmVal').textContent = pctToPwm(turnPct); }
+  if (sget('turn_auto_v2', '0') !== '1') { sset('turn_auto_v2', '1'); turnAuto = true; sset('turn_auto', '1'); }
   showPct(); $('turnAuto').checked = turnAuto;
   $('turnPct').addEventListener('input', function () {
     turnPct = +this.value; sset('turn_pct', turnPct); showPct();
@@ -1652,6 +1655,7 @@
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
 
   // Bağlı dövrə (closed-loop) dönmə: startAlpha-dan hədəf bucağa qədər zəif sürətlə dön, hədəfə çatan AN Dayan (S)
+  var fineMs = Math.max(10, Math.min(120, +sget('fine_ms', 40) || 40));                  // incə düzəliş: 1° üçün impuls (ms)
   async function gyroTurn(dir, deg, retried) {
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir (PWM 0), robot dönməz. Şkalanı artırın');
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
@@ -1661,7 +1665,7 @@
       mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis, startAlpha: gy.alpha, startHeading: (axis === 'y' ? hy : hz).h,
       lead: gyroLead * (deg < 20 ? 0.5 : 1), done: false, escalated: false, bumped: 0, kicks: 0, progAt: Date.now() + 600 };
     burstTok++;                                                                                  // əvvəlki dayandırma təkrarlarını ləğv et
-    var t0 = Date.now(), lastSend = 0, stalled = false, wrongCum = null;
+    var t0 = Date.now(), lastSend = 0, stalled = false, wrongCum = null, smpT = 0, smpPrev = 0, smpSgn = 0, shakes = 0, decelStage = 0;
     try {
       try {
         send(pctCmd());                                                                          // slayderdən dönmə sürəti Arduino-ya
@@ -1678,9 +1682,14 @@
             else { stalled = true; throw new Error('Robot dönmür (' + Math.round(turnPct) + '%). Dönmə sürəti şkalasını artırın'); }
           }
           if (now - lastSend >= 120) { send(cmd); lastSend = now; }                              // Arduino qoruması üçün əmri təkrarla
+          if (deg >= 25) {                                                                       // hədəfə yaxınlaşanda dönmə sürətini pilləli azalt (30° / 15° / 6° qalmış)
+            var rem = cur.target - cur.cum, stg = rem < 6 ? 3 : rem < 15 ? 2 : rem < 30 ? 1 : 0;
+            if (stg > decelStage) { decelStage = stg; var full = pctToPwm(turnPct), dp = Math.round(full * [1, 0.7, 0.5, 0.4][stg]); send('P' + Math.max(Math.min(full, 55), dp) + '\n'); send(cmd); lastSend = now; }
+          }
+          if (now - smpT >= 40) { var dd = cur.cum - smpPrev; if (Math.abs(dd) >= 0.6) { var sg = dd > 0 ? 1 : -1; if (smpSgn && sg !== smpSgn) shakes++; smpSgn = sg; smpPrev = cur.cum; } smpT = now; }   // irəli-geri titrəmə sayı
           await sleep(15);
         }
-      } finally { stopBurst(); }
+      } finally { stopBurst(); setTimeout(function () { send(pctCmd()); }, 500); }              // yavaşlamadan sonra normal dönmə sürətini bərpa et
       if (wrongCum !== null) {                                                                   // istiqamət səhvi: avtomatik düzəlt və bir dəfə yenidən cəhd et
         await wait(500);
         if (retried) { stalled = true; throw new Error('Robot hər iki istiqamətdə əks tərəfə dönür. Telefonun robota bərk bərkidildiyini yoxlayın'); }
@@ -1691,7 +1700,25 @@
       await wait(450);                                                                           // robot tam dayansın, qalıq bucağı ölç
       var err = cur.cum - deg;
       gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '° (sürət ' + Math.round(turnPct) + '%)';
+      if (turnAuto && !stalled && deg >= 20) {                                                   // ideal dönmə sürətini özü tapır: titrəmə / hədəfi keçmə -> −5%, tıxanma yuxarıda +5%
+        var shaky = shakes >= 3, over = err > 6, under = err < -8 && cur.bumped === 0;
+        if ((shaky || over) && turnPct > 10) { turnPct = Math.max(10, turnPct - 5); sset('turn_pct', turnPct); showPct(); send(pctCmd()); note('Dönmə ' + (shaky ? 'titrəyirdi' : 'hədəfi keçdi') + ': sürət ' + Math.round(turnPct) + '%-ə endirildi'); }
+        else if (under && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); sset('turn_pct', turnPct); showPct(); send(pctCmd()); note('Dönmə zəif idi: sürət ' + Math.round(turnPct) + '%-ə qaldırıldı'); }
+      }
       if (deg >= 20 && !stalled && Math.abs(err) < 15) { gyroLead = Math.max(0, Math.min(5, gyroLead + err * 0.5)); sset('gyro_lead3', gyroLead); }
+      if (!stalled && deg >= 3 && gyroReady()) {                                                // İNCƏ DÜZƏLİŞ: ±1° içinə girənə qədər qısa impulslarla düzəlt (ən çox 4 cəhd)
+        for (var fc = 0; fc < 4; fc++) {
+          chk();
+          var e2 = cur.cum - deg; if (Math.abs(e2) <= 1) break;
+          var cdir = e2 > 0 ? (dir === 'R' ? 'L' : 'R') : dir, before = cur.cum;
+          var fms = Math.max(25, Math.min(220, Math.abs(e2) * fineMs));
+          send(pctCmd()); send(slowCmd(cdir)); await sleep(fms); stopBurst(); await wait(420);
+          var moved = Math.abs(cur.cum - before);
+          if (moved > 0.25) { fineMs = Math.max(10, Math.min(120, fineMs * 0.5 + (fms / moved) * 0.5)); sset('fine_ms', fineMs); }   // 1° üçün lazım olan impuls müddətini öyrənir
+          else if (fc >= 1) fineMs = Math.min(120, fineMs * 1.5);                                       // robot tərpənmədi: impulsu uzat
+        }
+        gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '° (sürət ' + Math.round(turnPct) + '%)';
+      }
       note('Dönmə: hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '°');
     } finally { gt = null; renderGyro(true); }
   }
@@ -2428,9 +2455,16 @@
   // v47: 1) səs sözbəsöz DƏQİQ yazıya çevrilir (heç nə əlavə edilmir), 2) yalnız ondan sonra mətn əsasında qərar verilir
   function isStopWord(text) {
     var t = norm(text).split(' ').filter(Boolean), i;
-    if (!t.length || t.length > 3) return false;
-    for (i = 0; i < t.length; i++) if (t[i] === 'dayan' || t[i] === 'dayandir' || t[i] === 'stop' || t[i] === 'saxla') return true;
+    if (!t.length || t.length > 4) return false;
+    for (i = 0; i < t.length; i++) if (t[i].indexOf('dayan') === 0 || t[i] === 'dayin' || t[i] === 'stop' || t[i] === 'stob' || t[i] === 'saxla' || t[i] === 'dur' || t[i] === 'durun' || t[i] === 'besdir') return true;
     return false;
+  }
+  function stopIsEcho(text) {                                                          // robot özü "dayan/stop" sözünü deyirsə və mikrofon onu geri eşidirsə, bu əmr SAYILMIR
+    if (!lastSpokenNorm) return false;
+    var recent = isSpeaking || Date.now() - lastSpeakEnd < 2500; if (!recent) return false;
+    var sp = ' ' + lastSpokenNorm + ' ', toks = norm(text).split(' ').filter(Boolean), found = false, i;
+    for (i = 0; i < toks.length; i++) { if (isStopWord(toks[i])) { found = true; if (sp.indexOf(' ' + toks[i] + ' ') < 0) return false; } }
+    return found;
   }
   async function transcribeStrict(b64) {
     var vocab = 'irəli, geri, sağa, sola, dön, get, gəl, dayan, dərəcə, santimetr, metr, saniyə, qapı, yaxınlaş, nağıl, bax, oxu' + (robotName ? ', ' + robotName : '');
@@ -2454,7 +2488,7 @@
   async function routeAudio(wav, meta) {
     var b64 = await blobToBase64(wav), active = Date.now() < activeUntil;
     var tr = await transcribeStrict(b64), text = tr.text;
-    if (!text || isJunk(text) || isEcho(text)) { dbgWhy = 'Gemini boş/küy yazdı: "' + (text || '') + '"'; return; }
+    if (!text || ((isJunk(text) || isEcho(text)) && !(isStopWord(text) && !stopIsEcho(text)))) { dbgWhy = 'Gemini boş/küy yazdı: "' + (text || '') + '"'; return; }
     var called = !!robotName && hasWake(text), stopWord = isStopWord(text);
     dbgWhy = 'Gemini yazdı: "' + text + '" → ad ' + (called ? 'TAPILDI' : 'tapılmadı');
     if (!called && !active && !stopWord) { lastVoice.textContent = text.slice(0, 140); heardLog(text); pushOverheard(text); return; }       // çağırılmayıb: yalnız yazılır
@@ -2505,13 +2539,18 @@
     if (dupDrive(cmd)) return;
     lastVoice.textContent = heard + ' ⚡'; chatLine('me', heard + ' ⚡'); remember('İstifadəçi', heard);
     apiStats.local++; updateApiInfo(); activeUntil = 0; convo = false;
-    if (cmd.drive === 'S') abortMission();
+    if (cmd.drive === 'S') { abortMission(); stopBurst(); }
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta', true); });
   }
 
   // ---------- brauzer tanıması (varsa) ----------
   var rec = null;
+  var lastStopHeardT = 0;
   function onBrowserText(alts) {
+    if (voiceOn) {                                                                      // DAYAN hər şeydən üstündür: robot danışsa da, mikrofon bağlı olsa da, ad çəkilməsə də dərhal işləyir
+      var sa = (alts || []).filter(function (t) { return t && isStopWord(t) && !stopIsEcho(t); });
+      if (sa.length) { var nowS = Date.now(); if (nowS - lastStopHeardT > 800) { lastStopHeardT = nowS; execLocal({ drive: 'S' }, sa[0]); } return; }
+    }
     if (!micOpen()) return;
     alts = (alts || []).filter(function (t) { return !isJunk(t) && !isEcho(t); });
     if (!alts.length) return;
@@ -2856,7 +2895,7 @@
   function guarded(fn) { return function () { fn().catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta'); }); }; }
   $('idBtn').addEventListener('click', guarded(function () { return identifySubject(); }));
   $('memSave').addEventListener('click', guarded(function () { return rememberSubject($('memName').value, $('memKind').value); }));
-  function driveCmd() { return 'V' + pctToPwm(motorSpeed) + '\n'; }                                // irəli/geri sürəti: V<0..255>\n
+  function driveCmd() { return 'V' + Math.min(204, pctToPwm(motorSpeed)) + '\n'; }                                // irəli/geri sürəti: V<0..255>\n
   function sendSpeed() { if (connected && BT) send(driveCmd()); }
   $('motorSpeed').addEventListener('input', function () { motorSpeed = +this.value; showCal(); recalc(); liveSend('drive', driveCmd); });
   $('motorSpeed').addEventListener('change', function () { sset('motor_speed', motorSpeed); sendSpeed(); });
