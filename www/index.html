@@ -1498,6 +1498,7 @@
   // Əmri vaxt bitənə qədər 300 ms-dən bir təkrarlayır, sonra DƏRHAL Dayan (S) göndərir (iki dəfə, itkiyə qarşı)
   var KEEP_MS = 300;
   async function holdFor(cmd, ms) {
+    if ((cmd === 'L' || cmd === 'R') && turnInvert) cmd = cmd === 'L' ? 'R' : 'L';           // motor naqili tərsdirsə ("Dönmə istiqaməti tərsdir"), xam L/R də tərsinə göndərilir
     var end = Date.now() + ms, soft = (cmd === 'F' || cmd === 'B') && ms >= 1500 && ms < 100000, softAt = end - 700, softDone = false;
     try {
       chk(); send(cmd);
@@ -1517,7 +1518,7 @@
   var gy = { on: false, alpha: null, beta: null, gamma: null, abs: false, heading: null, curAxis: 'y', lastAt: 0, n: 0, zero: null, rendered: 0, t0: 0, lastRes: '' };
   var gt = null;                                           // aktiv dönmə: {dir, sign, target, cum, ...}
   var gyroLead = +sget('gyro_lead3', 0);                 // əyləc zamanı əlavə dönməni əvvəlcədən çıxmaq üçün (dərəcə), özü öyrənir (ultra-yavaş sürətdə çox kiçikdir)
-  var turnPct = Math.max(0, Math.min(100, +sget('turn_pct', 25)));    // dönmə sürəti 0-100% (Arduino: P<PWM 0..255>\n)
+  var turnPct = Math.max(0, Math.min(100, +sget('turn_pct', 45)));    // dönmə sürəti 0-100% (Arduino: P<PWM 0..255>\n)
   var turnAuto = sget('turn_auto', '1') === '1';                        // tıxananda avtomatik artırma (standart: söndürülüb)
   var liveAt = {};
   function liveSend(key, fn) { var n = Date.now(); if (connected && BT && n - (liveAt[key] || 0) >= 80) { liveAt[key] = n; send(fn()); } }
@@ -1529,6 +1530,7 @@
   $('gyMode').value = gyroMode;
   function showPct() { $('turnPct').value = turnPct; $('turnPctVal').textContent = Math.round(turnPct) + '%'; $('turnPwmVal').textContent = pctToPwm(turnPct); }
   if (sget('turn_auto_v2', '0') !== '1') { sset('turn_auto_v2', '1'); turnAuto = true; sset('turn_auto', '1'); }
+  if (sget('turn_v3', '0') !== '1') { sset('turn_v3', '1'); if (turnPct < 40) { turnPct = 45; sset('turn_pct', 45); } }          // zəif dönmə sürəti: bir dəfəlik 45%-ə qaldırılır
   showPct(); $('turnAuto').checked = turnAuto;
   $('turnPct').addEventListener('input', function () {
     turnPct = +this.value; sset('turn_pct', turnPct); showPct();
@@ -1609,8 +1611,10 @@
       gt.done = true; gt.cumAtDone = gt.cum; gt.doneAt = Date.now(); stopBurst();
     }
   }
-  function onOri(e) {
+  function onOriAbs(e) { if (Date.now() - (gy.plainAt || 0) > 1200) onOri(e, true); }          // adi hadisə gəlmirsə (alpha=null), mütləq hadisə ehtiyat olaraq istifadə olunur
+  function onOri(e, abs) {
     if (e.alpha == null || e.beta == null || e.gamma == null) return;
+    if (!abs) gy.plainAt = Date.now();
     var a = e.alpha, b = e.beta, g = e.gamma;
     if (!gy.t0) gy.t0 = Date.now();
     gy.alpha = a; gy.beta = b; gy.gamma = g; gy.abs = !!e.absolute; gy.lastAt = Date.now(); gy.n++;
@@ -1638,6 +1642,7 @@
     if (!D) { $('gyState').textContent = '⚠ Bu cihazda giroskop yoxdur'; warn('Bu cihazda giroskop (DeviceOrientation) dəstəklənmir. Vaxt ilə dönmə istifadə olunacaq.', true); return; }
     function attach(withMotion) {
       window.removeEventListener('deviceorientation', onOri); window.addEventListener('deviceorientation', onOri);
+      window.removeEventListener('deviceorientationabsolute', onOriAbs); window.addEventListener('deviceorientationabsolute', onOriAbs);
       window.removeEventListener('devicemotion', onMotion); if (withMotion && M) window.addEventListener('devicemotion', onMotion);
       gy.on = true; gy.n = 0; gy.t0 = Date.now(); renderGyro(true);
       setTimeout(function () { if (gy.on && gy.n === 0) { $('gyState').textContent = '⚠ Giroskop məlumatı gəlmir'; warn('Giroskop məlumatı gəlmir. Telefon parametrlərində hərəkət sensorlarını yoxlayın.', true); } }, 1800);
@@ -1655,6 +1660,25 @@
   $('straightOn').addEventListener('change', function () { straightOn = this.checked; sset('straight_on', straightOn ? '1' : '0'); if (!straightOn && hdgHold.on) holdEnd('X'); });
   $('gyInv').addEventListener('change', function () { turnInvert = this.checked; sset('turn_invert', turnInvert ? '1' : '0'); });
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
+  // Giroskop HƏMİŞƏ işlək olsun: söndüyü/susduğu halda özü yenidən qoşulur
+  var gyReAt = 0, needPerm = !!(window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission === 'function');
+  function gyroReattach() {
+    gyReAt = Date.now();
+    try {
+      window.removeEventListener('deviceorientation', onOri); window.addEventListener('deviceorientation', onOri);
+      window.removeEventListener('deviceorientationabsolute', onOriAbs); window.addEventListener('deviceorientationabsolute', onOriAbs);
+      if (window.DeviceMotionEvent) { window.removeEventListener('devicemotion', onMotion); window.addEventListener('devicemotion', onMotion); }
+      gy.on = true;
+    } catch (e) {}
+  }
+  setInterval(function () {
+    var n = Date.now(); if (n - gyReAt < 2500) return;
+    if (!gy.on) { if (!needPerm) { gyReAt = n; gyroStart(); } }
+    else if (n - gy.lastAt > 1500) gyroReattach();
+  }, 1500);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) gyroReattach(); });
+  window.addEventListener('focus', function () { gyroReattach(); });
+  ['touchstart', 'click'].forEach(function (ev) { document.addEventListener(ev, function once() { document.removeEventListener(ev, once); if (needPerm && !gy.on) gyroStart(); else gyroReattach(); }, { passive: true }); });
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
 
   // Bağlı dövrə (closed-loop) dönmə: startAlpha-dan hədəf bucağa qədər zəif sürətlə dön, hədəfə çatan AN Dayan (S)
@@ -1672,14 +1696,14 @@
     try {
       try {
         send(pctCmd());                                                                          // slayderdən dönmə sürəti Arduino-ya
-        send(cmd); lastSend = Date.now();
+        send(cmd); lastSend = Date.now(); setTimeout(function () { if (!cur.done) send('K'); }, 60);   // yerindən götürmək üçün qısa güclü impuls (statik sürtünmə)
         while (!cur.done) {
           chk();
           var now = Date.now();
           if (now - t0 > maxMs) { stalled = true; throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı'); }
           if (now - gy.lastAt > 800) { stalled = true; throw new Error('Giroskop məlumatı kəsildi, robot dayandı'); }
           if (cur.cum <= -5) { wrongCum = cur.cum; break; }                                     // robot əks tərəfə dönür
-          if (now - cur.progAt > 1500) {                                                         // tıxanma: robot yerindən tərpənmir
+          if (now - cur.progAt > 800) {                                                         // tıxanma: robot yerindən tərpənmir
             if (turnAuto && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); cur.bumped++; sset('turn_pct', turnPct); showPct(); send(pctCmd()); cur.progAt = now; }
             else if (cur.kicks < 3) { cur.kicks++; send('K'); cur.progAt = now; }               // qısa başlanğıc impulsunu təkrarla
             else { stalled = true; throw new Error('Robot dönmür (' + Math.round(turnPct) + '%). Dönmə sürəti şkalasını artırın'); }
@@ -1687,7 +1711,7 @@
           if (now - lastSend >= 120) { send(cmd); lastSend = now; }                              // Arduino qoruması üçün əmri təkrarla
           if (deg >= 25) {                                                                       // hədəfə yaxınlaşanda dönmə sürətini pilləli azalt (30° / 15° / 6° qalmış)
             var rem = cur.target - cur.cum, stg = rem < 6 ? 3 : rem < 15 ? 2 : rem < 30 ? 1 : 0;
-            if (stg > decelStage) { decelStage = stg; var full = pctToPwm(turnPct), dp = Math.round(full * [1, 0.7, 0.5, 0.4][stg]); send('P' + Math.max(Math.min(full, 55), dp) + '\n'); send(cmd); lastSend = now; }
+            if (stg > decelStage) { decelStage = stg; var full = pctToPwm(turnPct), dp = Math.round(full * [1, 0.7, 0.5, 0.4][stg]); send('P' + Math.max(Math.min(full, 90), dp) + '\n'); send(cmd); lastSend = now; }
           }
           if (now - smpT >= 40) { var dd = cur.cum - smpPrev; if (Math.abs(dd) >= 0.6) { var sg = dd > 0 ? 1 : -1; if (smpSgn && sg !== smpSgn) shakes++; smpSgn = sg; smpPrev = cur.cum; } smpT = now; }   // irəli-geri titrəmə sayı
           await sleep(15);
@@ -1705,7 +1729,7 @@
       gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '° (sürət ' + Math.round(turnPct) + '%)';
       if (turnAuto && !stalled && deg >= 20) {                                                   // ideal dönmə sürətini özü tapır: titrəmə / hədəfi keçmə -> −5%, tıxanma yuxarıda +5%
         var shaky = shakes >= 3, over = err > 6, under = err < -8 && cur.bumped === 0;
-        if ((shaky || over) && turnPct > 10) { turnPct = Math.max(10, turnPct - 5); sset('turn_pct', turnPct); showPct(); send(pctCmd()); note('Dönmə ' + (shaky ? 'titrəyirdi' : 'hədəfi keçdi') + ': sürət ' + Math.round(turnPct) + '%-ə endirildi'); }
+        if ((shaky || over) && turnPct > 30) { turnPct = Math.max(30, turnPct - 5); sset('turn_pct', turnPct); showPct(); send(pctCmd()); note('Dönmə ' + (shaky ? 'titrəyirdi' : 'hədəfi keçdi') + ': sürət ' + Math.round(turnPct) + '%-ə endirildi'); }
         else if (under && turnPct < 100) { turnPct = Math.min(100, turnPct + 5); sset('turn_pct', turnPct); showPct(); send(pctCmd()); note('Dönmə zəif idi: sürət ' + Math.round(turnPct) + '%-ə qaldırıldı'); }
       }
       if (deg >= 20 && !stalled && Math.abs(err) < 15) { gyroLead = Math.max(0, Math.min(5, gyroLead + err * 0.5)); sset('gyro_lead3', gyroLead); }
@@ -1764,6 +1788,7 @@
     else if (plan.clamped) note('Məhdudiyyət tətbiq olundu');
     else note('');
     if (plan.cmd === 'L' || plan.cmd === 'R') {
+      if (!gyroReady() && connected) { if (!gy.on) { try { gyroStart(); } catch (e) {} } else gyroReattach(); for (var gw = 0; gw < 15 && !gyroReady(); gw++) await sleep(100); }   // giroskop qoşulana qədər gözlə (1,5 san)
       if (gyroReady()) {
         var gdeg = plan.deg;
         await runMission(plan.label + ' (giroskop)', async function () { mission.timed = true; mission.gyro = true; await gyroTurn(plan.cmd, gdeg); });
