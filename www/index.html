@@ -823,7 +823,7 @@
   var hdgHold = { mark: null, lastErr: 0, dErr: 0, refErr: 0, refT: 0, on: false, dead: false, dirty: false, cmd: '', target: 0, axis: 'y', bias: 0, sent: null, sentAt: 0, last: 0, t0: 0, lastSend: 0, tmr: null };
   function rawW(t) { try { if (connected && BT && devAddr) BT.write(devAddr, SPP, t, function () {}, function () {}); } catch (e) {} }
   function trimWrite(tr, force) {
-    var v = Math.max(-120, Math.min(120, Math.round(tr * (turnInvert ? -1 : 1)))), n = Date.now();
+    var v = Math.max(-95, Math.min(95, Math.round(tr * (turnInvert ? -1 : 1)))), n = Date.now();
     if (!force && hdgHold.sent !== null && Math.abs(v - hdgHold.sent) < 2 && n - hdgHold.sentAt < 500) return;
     hdgHold.sent = v; hdgHold.sentAt = n; hdgHold.dirty = v !== 0; rawW('T' + (v + 128) + '\n');
   }
@@ -863,7 +863,8 @@
       }
     } else H.refT = 0;
     if (Math.abs(err) > 1 && Math.abs(err) <= 15) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));   // motor fərqi yalnız kiçik sapmalarda öyrənilir
-    var tr = Math.max(-120, Math.min(120, H.bias - STR_KP * err - STR_KD * H.dErr));      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
+    var tr = Math.max(-95, Math.min(95, H.bias - STR_KP * err - STR_KD * H.dErr));
+    if (now - H.t0 < 500) { H.lastErr = err; H.dErr = 0; tr = Math.max(-40, Math.min(40, H.bias)); }   // start anı: giroskop silkələnir, 0,5 san düzəliş vurulmur      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
     trimWrite(tr);
     holdInfo('Düz getmə: hədəf ' + f1(H.target) + '° · sapma ' + (err > 0 ? '+' : '') + f1(err) + '° · düzəliş ' + Math.round(tr * (turnInvert ? -1 : 1)) + '%');
   }
