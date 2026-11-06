@@ -2373,7 +2373,10 @@
   function isStopWord(text) {
     var t = norm(text).split(' ').filter(Boolean), i;
     if (!t.length || t.length > 4) return false;
-    for (i = 0; i < t.length; i++) if (t[i].indexOf('dayan') === 0 || t[i] === 'dayin' || t[i] === 'stop' || t[i] === 'stob' || t[i] === 'saxla' || t[i] === 'dur' || t[i] === 'durun' || t[i] === 'besdir') return true;
+    for (i = 0; i < t.length; i++) {
+      if (/^dayanm(ad|ay|az)/.test(t[i])) continue;                                    // "dayanmadan irəli get" = DAYANMADAN: stop deyil
+      if (t[i].indexOf('dayan') === 0 || /^dayy?an/.test(t[i]) || t[i] === 'dayin' || t[i] === 'stop' || t[i] === 'stopp' || t[i] === 'stob' || t[i] === 'stap' || t[i] === 'saxla' || t[i] === 'dur' || t[i] === 'durun' || t[i] === 'besdir' || t[i] === 'kifayet') return true;
+    }
     return false;
   }
   // 🔒 SON [Səs qəbulu və tanıma]
@@ -2488,7 +2491,7 @@
   function onBrowserText(alts, conf) {
     if (voiceOn) {                                                                      // DAYAN hər şeydən üstündür: robot danışsa da, mikrofon bağlı olsa da, ad çəkilməsə də dərhal işləyir
       var sa = (alts || []).filter(function (t) { return t && isStopWord(t) && !stopIsEcho(t); });
-      if (sa.length) { var nowS = Date.now(); if (nowS - lastStopHeardT > 800) { lastStopHeardT = nowS; execLocal({ drive: 'S' }, sa[0]); } return; }
+      if (sa.length) { var nowS = Date.now(); if (nowS - lastStopHeardT > 2000) { lastStopHeardT = nowS; execLocal({ drive: 'S' }, sa[0]); } return; }
     }
     if (!micOpen()) return;
     alts = (alts || []).filter(function (t) { return !isJunk(t) && !isEcho(t); });
@@ -2514,11 +2517,15 @@
   function startBrowser() {
     if (!SRC) { note('Bu mühitdə brauzer tanıması yoxdur. «Gemini» üsulunu seçin.'); return false; }
     try {
-      rec = new SRC(); rec.onspeechstart = function () { try { RB.hear(); } catch (e) {} }; rec.lang = 'az-AZ'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 3;
+      rec = new SRC(); rec.onspeechstart = function () { try { RB.hear(); } catch (e) {} }; rec.lang = 'az-AZ'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
       rec.onresult = function (e) {
-        for (var i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) {
+        for (var i = e.resultIndex; i < e.results.length; i++) {
           var alts = [], j; for (j = 0; j < e.results[i].length; j++) alts.push(e.results[i][j].transcript);
-          try { onBrowserText(alts, e.results[i][0] ? e.results[i][0].confidence : 0); } catch (er) {}
+          if (e.results[i].isFinal) { try { onBrowserText(alts, e.results[i][0] ? e.results[i][0].confidence : 0); } catch (er) {} }
+          else if (voiceOn) {                                                            // cümlə bitməmiş: yalnız DAYAN sözünü yoxla və dərhal dayan
+            var sw = alts.filter(function (t) { return t && isStopWord(t) && !stopIsEcho(t); });
+            if (sw.length) { var nowI = Date.now(); if (nowI - lastStopHeardT > 2000) { lastStopHeardT = nowI; try { execLocal({ drive: 'S' }, sw[0]); } catch (er) {} } }
+          }
         }
       };
       rec.onend = function () { if (voiceOn && VS.engine === 'browser') setTimeout(function () { try { rec.start(); } catch (er) {} }, 300); };
@@ -2842,7 +2849,7 @@
     { cmd: { drive: 'R', amount: 180, unit: 'deg' }, say: ['geriyə dön', 'geri dön', 'geriyə', 'arxaya dön', 'geriyə dönün'] },   // giroskopik 180° geriyə dönmə
     { cmd: { drive: 'F' },                           say: ['irəli get', 'irəli', 'irəli yeri', 'düz get'] },                       // F
     { cmd: { drive: 'B' },                           say: ['geri get', 'geri', 'geri çəkil'] },                                    // B
-    { cmd: { drive: 'S' },                           say: ['dayan', 'dayandır', 'stop', 'dur'] }                                   // S
+    { cmd: { drive: 'S' },                           say: ['dayan', 'dayandır', 'dayanın', 'dayan dayan', 'stop', 'dur', 'durun', 'bəsdir', 'saxla'] }                                   // S
   ];
   var LOCAL_MAP = null;
   function isZikoName(rn) { return /^(ziko|zeko|ziqo|zigo|siko|zico)$/.test(rn); }
