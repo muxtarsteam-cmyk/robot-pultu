@@ -2035,7 +2035,8 @@
       'Also fill "amount" (number) and "unit" when the user gives a size: "deg" for turns ("sağa 45 dərəcə dön" -> R, 45, deg), "cm" or "m" for distance ("irəli 10 sm get" -> F, 10, cm; "irəli 1 metr get" -> F, 1, m), "sec" for seconds. ' +
       '"geriyə dön" / "arxaya dön" / "tərsinə dön" = turn around: drive R, amount 180, unit deg. If no size is given leave amount and unit null. ' +
       'Set "continuous": true ONLY if the user explicitly asks for non-stop movement ("dayanmadan irəli get", "fasiləsiz"), otherwise false.\n' +
-      '- "agent": ANY request that needs a PLAN of several actions or camera analysis, i.e. everything that is not one single simple movement, a stop, a plain question or a long story. This includes finding or going to a door, an object, an animal or a person, reading a screen or text, counting or recognizing what is in front of the camera. Examples: "1 metr irəli get, sağa dön, 40 santim irəli get, sola dön, dayan"; "qapını tap və yaxınlaş"; "ekrandakı yazını oxu"; "otaqda neçə nəfər var?"; "qapıya get və otaqda kim olduğunu de"; "bir az irəli get və nə gördüyünü söylə". Two modes. (A) The user gives an EXPLICIT sequence of movements/actions: put the ordered plan in "steps" and set "goal" null. (B) The task depends on what the camera sees or on the surroundings (find or go to something, "qapının yanına gəl", look for people, count them, "stolun üstündə nə var?", "avtomobilin önünə çıx", leave the room / go out through the door, explore, indoors or outdoors): set "steps" null and put the user\'s whole request, restated clearly in English, in "goal"; the robot then looks through its camera and decides step by step until the goal is done. Mode A: put an ORDERED plan (max 12 steps, keep the user\'s order) in "steps", each step an object: {"op":"move","drive":"F|B","amount":number|null,"unit":"cm|m|sec"} | {"op":"turn","drive":"L|R","amount":degrees|null} (default 90) | {"op":"look","question":"what to find out with the camera, e.g. count the people"} (the robot looks through its camera and tells the answer aloud) | {"op":"say","text":"one short Azerbaijani sentence"} | {"op":"wait","sec":number} | {"op":"stop"}. The robot has NO arms: it can only move, turn, look and speak. If the user asks for something physically impossible (carry, hand over, pick up), use intent "ask" and explain briefly. For ONE simple movement use intent "drive" instead.\n' +
+      '- "scan": the answer needs the robot to look in ALL directions of the room by turning in place (90 degrees at a time): counting people or things in the room ("otaqda neçə nəfər var?", "neçə adam var?", "ətrafda neçə nəfər var?", "otaqda kimlər var?"), or describing everything around it ("otaqda nə görürsən?", "ətrafı gözdən keçir", "otağı yoxla"). Put what to find out in "question" (English, e.g. "count the people in the room"). Do NOT use scan for one look straight ahead ("nə görürsən?" with no mention of the room or surroundings, "stolun üstündə nə var?" -> look), and do NOT use it when the user wants the robot to GO somewhere or find and approach something (that is agent).\n' +
+      '- "agent": ANY request that needs a PLAN of several actions or camera analysis, i.e. everything that is not one single simple movement, a stop, a plain question or a long story. This includes finding or going to a door, an object, an animal or a person, reading a screen or text, counting or recognizing what is in front of the camera. Examples: "1 metr irəli get, sağa dön, 40 santim irəli get, sola dön, dayan"; "qapını tap və yaxınlaş"; "ekrandakı yazını oxu"; "qapıya get və otaqda kim olduğunu de"; "bir az irəli get və nə gördüyünü söylə". Two modes. (A) The user gives an EXPLICIT sequence of movements/actions: put the ordered plan in "steps" and set "goal" null. (B) The task depends on what the camera sees or on the surroundings (find or go to something, "qapının yanına gəl", look for something or someone, "stolun üstündə nə var?", "avtomobilin önünə çıx", leave the room / go out through the door, explore, indoors or outdoors): set "steps" null and put the user\'s whole request, restated clearly in English, in "goal"; the robot then looks through its camera and decides step by step until the goal is done. Mode A: put an ORDERED plan (max 12 steps, keep the user\'s order) in "steps", each step an object: {"op":"move","drive":"F|B","amount":number|null,"unit":"cm|m|sec"} | {"op":"turn","drive":"L|R","amount":degrees|null} (default 90) | {"op":"look","question":"what to find out with the camera, e.g. count the people"} (the robot looks through its camera and tells the answer aloud) | {"op":"say","text":"one short Azerbaijani sentence"} | {"op":"wait","sec":number} | {"op":"stop"}. The robot has NO arms: it can only move, turn, look and speak. If the user asks for something physically impossible (carry, hand over, pick up), use intent "ask" and explain briefly. For ONE simple movement use intent "drive" instead.\n' +
       '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + (robotName || 'robot') + '", "' + (robotName || 'robot') + ' bura gəl").\n' +
       '- "look": the user asks what the robot sees in general / to look around / asks something else about the view ("nə görürsən?", "ətrafa bax"). Put the question in "question" or null.\n' +
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
@@ -2272,6 +2273,8 @@
           '- If the target is not visible, scan by turning 45-60 degrees at a time (a full 360 scan = 6-8 turns). Write what you saw into "notes" (for example people seen and the heading where you saw them) so you never count the same thing twice. After a full scan without finding it, move 60-80 cm toward open space and scan again.\n' +
           '- If the target is visible but not centered, TURN toward it first (it is in the left third: turn left 15-30 degrees; right third: turn right 15-30). Move forward only when it is roughly centered.\n' +
           '- Move in small safe steps: up to 80 cm when the way is clear and the target is far; 20-40 cm when it is near. NEVER drive forward if a wall, furniture, a person, a car or any obstacle fills the lower part of the frame or looks closer than about 40 cm: turn to a free direction instead. The robot has no other obstacle sensor.\n' +
+          '- "Come to me" / "yanıma gəl" / "bura gəl" / "məni tap": the target is the PERSON who gave the command (the closest person you can see). Scan for a person, turn until they are centered, then drive toward them in small steps, checking the frame each time. Stop when they fill a large part of the frame (about 60-80 cm away) and finish with one short friendly sentence. Never touch or push anyone. If no person is found after a full scan, finish and say so.\n' +
+          '- "Find X and go to it" (a door, a table, an object): once X is visible, center it, then approach in steps until it fills a good part of the frame or is about 50-60 cm away, then finish and say what you found.\n' +
           '- To go through a door or a gap: first align the middle of the opening with the center of the frame, then drive forward in small steps until you are through, then finish.\n' +
           '- To reach the front, side or back of something (for example a car), first get near it, then go around it in small steps, checking the frame each time.\n' +
           '- For counting or describing, look from enough directions first, then answer from your notes.\n' +
@@ -2297,6 +2300,33 @@
       else if (!finished) await speak('Tapşırığı tam bitirə bilmədim, amma əlimdən gələni etdim.');
     });
   }
+  // ---------- ƏTRAFI GÖZDƏN KEÇİR: yerində 4 istiqamətə baxır (hər dəfə 90° dönür), sonda hamısını cəmləyib cavab verir ----------
+  async function runScan(question) {
+    question = String(question || '').trim() || 'describe what is in the room';
+    if (!(await ensureReady(true))) return;
+    await runMission('Otağı gözdən keçirirəm', async function () {
+      mission.timed = true;
+      var views = [], names = ['front (start direction)', 'right (90 degrees)', 'behind (180 degrees)', 'left (270 degrees)'];
+      speak('Yaxşı, ətrafa baxıram.', null).catch(function () {});
+      for (var v = 0; v < 4; v++) {
+        chk();
+        setMissionLine('▶ Otağı gözdən keçirirəm: ' + (v + 1) + '/4');
+        await wait(v === 0 ? 800 : 500);                                                           // kamera sakitləşsin
+        var r = await visionJSON('TASK:SCAN_VIEW\nYou are the eye of a small robot turning in place to survey a room. This is view ' + (v + 1) + ' of 4 (' + names[v] + ', relative to where the robot started). The user wants to know: "' + question + '".\n' +
+          'Look carefully at the whole frame. Reply ONLY JSON: {"people":number of distinct people visible (count partly visible ones too),"people_detail":"where each person is (left/center/right of the frame) and what they are doing; say if someone is cut off at the left or right edge","objects":["main things and furniture, max 12"],"table_items":["things lying on a table or desk, empty if none"],"door":null|"where the door is in the frame","other":"anything notable, short"}');
+        views.push(r || {});
+        try { await agentDrive({ op: 'turn', drive: 'R', amount: 90, unit: 'deg' }); }   // 4-cü dönmə robotu başlanğıc istiqamətə qaytarır
+        catch (e) { if (e && e.abort) throw e; warn(e && e.message ? e.message : 'Dönmə alınmadı'); break; }
+      }
+      chk();
+      var summary = views.map(function (x, i) { return 'View ' + (i + 1) + ' (' + names[i] + '): ' + JSON.stringify(x); }).join('\n');
+      var ans = await gemini([{ text: 'TASK:SCAN_ANSWER\nThe robot turned in place in 90-degree steps and looked in ' + views.length + ' direction(s). The user asked: "' + question + '".\n' + summary + '\n' +
+        'Answer the question using ALL views. For counting people: add up the people of the views, but if the same person is described as cut off at the edge of two neighbouring views, count them once. If the views gave too little information, say so honestly. Reply in Azerbaijani, natural and friendly, at most 2 short sentences, plain text, no markdown, no emoji.' }], { maxTokens: 300 });
+      ans = String(ans || '').trim() || 'Ətrafa baxdım, amma dəqiq cavab verə bilmədim.';
+      chatLine('bot', ans); remember('Robot', ans);
+      await speak(ans.slice(0, 300), 'chat');
+    });
+  }
   async function runIntent(r, c) {
     var intent = r.intent || 'none', isStopLike = intent === 'stop' || intent === 'drive';
     if (!isStopLike) { acting = true; micUpdate(); }
@@ -2307,6 +2337,7 @@
         case 'ask': if (r.answer) { chatLine('bot', String(r.answer)); remember('Robot', r.answer); speak(String(r.answer), 'chat').catch(function () {}); } break;
         case 'long': await longReply(c.b64, c.heard); break;
         case 'look': await describeView(r.question || ''); break;
+        case 'scan': await runScan(r.question || c.heard); break;
         case 'agent': if (Array.isArray(r.steps) && r.steps.length) await runAgent(r.steps); else await runGoal(r.goal || c.heard); break;
         default: break;
       }
