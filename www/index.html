@@ -805,7 +805,9 @@
     if (connected && BT) { modeSentFor = pivotMode; modeSentAt = Date.now(); BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
   }
   var TURN_CMDS = 'LRQE', MOVE_CMDS = 'FBLRQE', armSentAt = 0;
+  var motorRunUntil = 0;                                                                // motor işləyən müddət (səs tanıma küyə qarşı sərtləşir)
   function send(c) {
+    if (typeof c === 'string' && c.length >= 1) { var c0 = c.charAt(0); if ('FBLRQE'.indexOf(c0) >= 0) motorRunUntil = Date.now() + 700; else if (c0 === 'S') motorRunUntil = Date.now() + 400; }
     try { window.RB && RB.drive(c); } catch (e) {}
     var cs = String(c).replace(/\n/g, ''); lastCmd.textContent = (NAMES[c] || 'Sürət') + ' (' + cs + ')';
     holdHook(c);                                                                      // irəli/geri: giroskopla düz getmə
@@ -2491,14 +2493,25 @@
     });
   }
   function finishUtterance() {
-    var s = speech, meta = { voicedMs: voicedMs, snr: noise > 0 ? peakRms / noise : 99 }, dens = speechMs ? voicedMs / speechMs : 0;
+    var s = speech, meta = { voicedMs: voicedMs, snr: noise > 0 ? peakRms / noise : 99 }, dens = speechMs ? voicedMs / speechMs : 0, mo = Date.now() < motorRunUntil + 600;
     speaking = false; speech = []; silenceMs = 0; onsetN = 0;
     if (!s.length) return;
-    if (meta.voicedMs < 220 || dens < 0.15 || meta.snr < 2.5) { dbgWhy = 'atıldı: nitq deyil (' + Math.round(meta.voicedMs) + ' ms, snr ' + meta.snr.toFixed(1) + ')'; apiStats.skipped++; updateApiInfo(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle'); return; }   // nitq deyil: tıqqıltı, küy, nəfəs
+    if (meta.voicedMs < (mo ? 140 : 220) || dens < (mo ? 0.08 : 0.15) || meta.snr < (mo ? 1.8 : 2.5)) { dbgWhy = 'atıldı: nitq deyil (' + Math.round(meta.voicedMs) + ' ms, snr ' + meta.snr.toFixed(1) + ')'; apiStats.skipped++; updateApiInfo(); if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle'); return; }   // nitq deyil: tıqqıltı, küy, nəfəs
     if (Date.now() < activeUntil && voiceOn && !isSpeaking) updateVoiceBtn('send');                  // əmr gözlənilirdi: ekran dərhal "emal edilir" göstərsin
     else if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
     handleUtterance(s, meta);
     setTimeout(function () { if (voiceOn && !isSpeaking && !busy && !routing && !acting) updateVoiceBtn('idle'); }, 2600);
+  }
+  function pitchStrength(x, rate) {                                                      // avtokorrelyasiya: insan səsi (75-400 Hz dövri) vs motor küyü
+    var dec = Math.max(1, Math.round(rate / 12000)), r = rate / dec, m = Math.floor(x.length / dec), y = new Float32Array(m), i, lag, k;
+    for (i = 0; i < m; i++) y[i] = x[i * dec];
+    var lo = Math.max(2, Math.floor(r / 400)), hi = Math.min(Math.floor(r / 75), m - 8), best = 0;
+    for (lag = lo; lag <= hi; lag++) {
+      var num = 0, a = 0, b = 0;
+      for (k = 0; k < m - lag; k++) { num += y[k] * y[k + lag]; a += y[k] * y[k]; b += y[k + lag] * y[k + lag]; }
+      var cr = num / Math.sqrt(a * b + 1e-12); if (cr > best) best = cr;
+    }
+    return best;
   }
   function processChunk(chunk, rate) {
     if (!voiceOn || isRateLimited) return;
@@ -2509,9 +2522,10 @@
     var rms = Math.sqrt(sum / n), ms = n / rate * 1000, crHz = zc * rate / (2 * n);
     var floor = Math.max(0.010, noise * 3);
     if (Date.now() - lastDbg > 250) { lastDbg = Date.now(); dbg('🎙 səviyyə ' + Math.round(rms * 1000) + ' / hədd ' + Math.round(floor * 1000) + (speaking ? ' · NİTQ' : '') + (dbgWhy ? '\n' + dbgWhy : '')); }
-    var voiced = rms > floor && crHz > 70 && crHz < 6500;                                           // insan nitqi diapazonu
+    var motorOn = Date.now() < motorRunUntil, pit = (motorOn && rms > floor * 0.7) ? pitchStrength(chunk, rate) : 1;
+    var voiced = rms > floor * (motorOn ? 1.25 : 1) && crHz > 70 && crHz < 6500 && (!motorOn || pit > 0.45);   // insan nitqi diapazonu; motor işləyəndə əlavə olaraq səs tellərinin dövriliyi tələb olunur
     if (!speaking) {
-      noise = rms < noise ? noise * 0.9 + rms * 0.1 : noise * 0.995 + Math.min(rms, floor) * 0.005;
+      noise = rms < noise ? noise * 0.9 + rms * 0.1 : (motorOn ? noise * 0.96 + Math.min(rms, floor * 1.5) * 0.04 : noise * 0.995 + Math.min(rms, floor) * 0.005);   // motor küyünün səviyyəsinə tez uyğunlaş
       noise = Math.min(0.05, Math.max(0.0015, noise));
       preRoll.push(chunk); if (preRoll.length > 10) preRoll.shift();
       if (voiced) onsetN++; else if (onsetN > 0) onsetN--;
@@ -2519,7 +2533,7 @@
     } else {
       speech.push(chunk); speechMs += ms;
       if (voiced) { voicedMs += ms; if (rms > peakRms) peakRms = rms; }
-      if (rms > floor * 0.7) silenceMs = 0; else silenceMs += ms;
+      if (motorOn ? (rms > floor * 0.8 && pit > 0.3) : (rms > floor * 0.7)) silenceMs = 0; else silenceMs += ms;     // motor işləyəndə yalnız insan səsi cümləni davam etdirir
       if (speechMs > 6000 && voicedMs / speechMs < 0.12) { resetVad(); return; }                    // fasiləsiz küy
       var hang = speechMs < 1500 ? Math.min(pauseMs, 350) : speechMs < 3500 ? Math.min(pauseMs, 550) : Math.min(pauseMs, 900);     // cümlənin ortasındakı qısa fasilə cümləni ikiyə bölməsin
       if (silenceMs > hang || speechMs > 20000) finishUtterance();
@@ -2547,7 +2561,9 @@
         srcNode = ctx.createMediaStreamSource(stream);
         proc = ctx.createScriptProcessor(2048, 1, 1);
         proc.onaudioprocess = function (e) { lastChunkAt = Date.now(); processChunk(new Float32Array(e.inputBuffer.getChannelData(0)), ctx.sampleRate); };
-        srcNode.connect(proc); proc.connect(ctx.destination);
+        var hpF = ctx.createBiquadFilter(); hpF.type = 'highpass'; hpF.frequency.value = 300; hpF.Q.value = 0.8;       // motorun aşağı tezlikli uğultusunu kəs
+        var lpF = ctx.createBiquadFilter(); lpF.type = 'lowpass'; lpF.frequency.value = 4500; lpF.Q.value = 0.8;       // yüksək tezlikli fıştırtını kəs
+        srcNode.connect(hpF); hpF.connect(lpF); lpF.connect(proc); proc.connect(ctx.destination); bpNodes = [hpF, lpF];
         resetVad(); noise = 0.008; lastChunkAt = Date.now(); micFails = 0;
         if (isRestart) note('');
         updateVoiceBtn('idle'); micUpdate();
@@ -2557,7 +2573,9 @@
       });
     });
   }
+  var bpNodes = [];
   function stopMic() {
+    try { bpNodes.forEach(function (n) { n.disconnect(); }); } catch (e) {} bpNodes = [];
     try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
     try { if (srcNode) srcNode.disconnect(); } catch (e) {}
     try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
