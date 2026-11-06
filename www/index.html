@@ -309,6 +309,7 @@
 </div>
 <script src="cordova.js"></script>
 <script>
+// 🔒 QIFILLI HİSSƏLƏR (istifadəçi qıfıllayıb): [Bluetooth səs idarəsi], [Hərəkət əmrləri və dönmə], [Səs qəbulu və tanıma — motor küyü süzgəci, insan səsini tanıma və «dayan» önceliyi daxil]. "🔒 QIFILLI" ilə "🔒 SON" arasındakı kodu dəyişmək lazımdırsa, ƏVVƏLCƏ istifadəçidən icazə al.
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var fs = $('rbFS'); if (!fs) return;
@@ -744,6 +745,7 @@
     $('pickCancel').onclick = function () { $('picker').style.display = 'none'; note(''); };
     $('picker').style.display = 'flex';
   }
+  // 🔒 QIFILLI [Bluetooth səs idarəsi]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function doConnect(d) {
     note('Qoşulur: ' + (d.name || d.address) + ' ...');
     BT.connect(d.address, [SPP], function () {
@@ -757,6 +759,8 @@
       warn(was ? 'Bluetooth bağlantısı kəsildi' : 'Bluetooth qoşulmadı. Robotun işə düşdüyünü və cütləşdiyini yoxlayın.');
     });
   }
+  // 🔒 SON [Bluetooth səs idarəsi]
+  // 🔒 QIFILLI [Bluetooth səs idarəsi]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function connect() {
     if (!BT) { warn('Bluetooth plugin tapılmadı. Simulyasiya rejimində işləyir.'); return; }
     askPermissions(function () {
@@ -770,6 +774,7 @@
       }, function (m) { warn(m || 'Bluetooth açılmadı'); });
     });
   }
+  // 🔒 SON [Bluetooth səs idarəsi]
   // Əlaqə kəsiləndə (və ya kəsilməzdən əvvəl) connected bayrağından asılı olmadan Arduino-ya birbaşa 'S' göndərir
   function rawStop() {
     try {
@@ -781,6 +786,7 @@
   // Heartbeat: qoşulu olduqca hər 300 ms 'H' göndərilir. Arduino 1 san 'H' (və ya başqa bayt) almasa əlaqəni kəsilmiş sayıb motorları dayandırır.
   setInterval(function () { if (connected && BT && devAddr) { try { BT.write(devAddr, SPP, 'H', function () {}, function () {}); } catch (e) {} } }, 300);
   window.addEventListener('pagehide', rawStop);
+  // 🔒 QIFILLI [Bluetooth səs idarəsi]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function disconnect() {
     abortMission();
     rawStop();
@@ -788,6 +794,7 @@
     setConnected(false); devAddr = null;
     if (BT && a) setTimeout(function () { try { BT.disconnect(a, SPP, function () {}, function () {}); } catch (e) {} }, 400);   // S göndərilməsi üçün qısa gecikmə
   }
+  // 🔒 SON [Bluetooth səs idarəsi]
   connBtn.addEventListener('click', function () { connected ? disconnect() : connect(); });
 
   // ---------- Dönmə rejimi: N = Spin (4 təkər), O = Pivot (tək tərəf işləyir) ----------
@@ -805,9 +812,12 @@
     if (connected && BT) { modeSentFor = pivotMode; modeSentAt = Date.now(); BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
   }
   var TURN_CMDS = 'LRQE', MOVE_CMDS = 'FBLRQE', armSentAt = 0;
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   var motorRunUntil = 0;                                                                // motor işləyən müddət (səs tanıma küyə qarşı sərtləşir)
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function send(c) {
-    if (typeof c === 'string' && c.length >= 1) { var c0 = c.charAt(0); if ('FBLRQE'.indexOf(c0) >= 0) motorRunUntil = Date.now() + 700; else if (c0 === 'S') motorRunUntil = Date.now() + 400; }
+    if (typeof c === 'string' && c.length >= 1) { var c0 = c.charAt(0); if (c0 === 'F' || c0 === 'B') burstTok++; /* YENİ: təkrar basanda əvvəlki buraxılışın gecikmiş 'S' əmrləri ləğv olunur */ if ('FBLRQE'.indexOf(c0) >= 0) motorRunUntil = Date.now() + 700; else if (c0 === 'S') motorRunUntil = Date.now() + 400; }
     try { window.RB && RB.drive(c); } catch (e) {}
     var cs = String(c).replace(/\n/g, ''); lastCmd.textContent = (NAMES[c] || 'Sürət') + ' (' + cs + ')';
     holdHook(c);                                                                      // irəli/geri: giroskopla düz getmə
@@ -821,6 +831,7 @@
     }
     BT.write(devAddr, SPP, c, function () {}, function () { warn('Robota göndərmə xətası. Bluetooth bağlantısını yoxlayın.'); });
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
 
   // ---------- DÜZ GETMƏ: irəli/geri zamanı giroskopla istiqaməti saxla ----------
   // Başlanğıcda robotun baxdığı bucaq yadda saxlanır. Robot sağa/sola sapanda JS 60 ms-dən bir Arduino-ya 'T<0-200>\n' (trim = dəyər-100, %) göndərir:
@@ -829,12 +840,15 @@
   var strBias = {}; try { strBias = JSON.parse(sget('str_bias', '{}')) || {}; } catch (e) { strBias = {}; }
   var hdgHold = { mark: null, lastErr: 0, dErr: 0, refErr: 0, refT: 0, on: false, dead: false, dirty: false, cmd: '', target: 0, axis: 'y', bias: 0, sent: null, sentAt: 0, last: 0, t0: 0, lastSend: 0, tmr: null };
   function rawW(t) { try { if (connected && BT && devAddr) BT.write(devAddr, SPP, t, function () {}, function () {}); } catch (e) {} }
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function trimWrite(tr, force) {
     var v = Math.max(-95, Math.min(95, Math.round(tr * (turnInvert ? -1 : 1)))), n = Date.now();
     if (!force && hdgHold.sent !== null && Math.abs(v - hdgHold.sent) < 2 && n - hdgHold.sentAt < 500) return;
     hdgHold.sent = v; hdgHold.sentAt = n; hdgHold.dirty = v !== 0; rawW('T' + (v + 128) + '\n');
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   function holdInfo(t) { var e = $('straightInfo'); if (e) e.textContent = t; }
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function holdEnd(c) {
     if (hdgHold.on) {
       clearInterval(hdgHold.tmr); hdgHold.on = false;
@@ -844,6 +858,8 @@
     if (c === 'S') { hdgHold.dirty = false; hdgHold.sent = null; }
     else if (hdgHold.dirty) { trimWrite(0, true); }
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function holdKeep(c) {
     var now = Date.now();
     if (hdgHold.on && hdgHold.cmd === c) { hdgHold.lastSend = now; return; }
@@ -852,9 +868,11 @@
     var ax = gy.curAxis, h = axisHeading(gy.alpha, gy.beta, gy.gamma, ax).h;
     hdgHold.on = true; hdgHold.dead = false; hdgHold.cmd = c; hdgHold.axis = ax; hdgHold.target = h; hdgHold.mark = h; hdgHold.lastErr = 0; hdgHold.dErr = 0; hdgHold.refT = 0;
     hdgHold.bias = strBias[c] || 0; hdgHold.sent = null; hdgHold.last = now; hdgHold.t0 = now; hdgHold.lastSend = now;
-    trimWrite(hdgHold.bias, true);
+    trimWrite(0, true);   // YENİ: start anında düzəliş yoxdur, 4 təkər eyni sürətlə başlayır
     clearInterval(hdgHold.tmr); hdgHold.tmr = setInterval(holdTick, 60);
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function holdTick() {
     var H = hdgHold, now = Date.now(); if (!H.on || H.dead) return;
     if (now - H.lastSend > 900) { holdEnd('S'); return; }
@@ -869,16 +887,19 @@
         H.refT = now; H.refErr = Math.abs(err);
       }
     } else H.refT = 0;
-    if (Math.abs(err) > 1 && Math.abs(err) <= 15) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));   // motor fərqi yalnız kiçik sapmalarda öyrənilir
+    if (now - H.t0 >= 1000 && Math.abs(err) > 1 && Math.abs(err) <= 15) H.bias = Math.max(-40, Math.min(40, H.bias - STR_KI * err * dt));   // motor fərqi yalnız kiçik sapmalarda öyrənilir
     var tr = Math.max(-95, Math.min(95, H.bias - STR_KP * err - STR_KD * H.dErr));
-    if (now - H.t0 < 350) { H.lastErr = err; H.dErr = 0; tr = Math.max(-40, Math.min(40, H.bias)); }   // start anı: giroskop silkələnir, 0,5 san düzəliş vurulmur      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
+    if (now - H.t0 < 1000) { H.lastErr = err; H.dErr = 0; H.refT = 0; H.target = axisHeading(gy.alpha, gy.beta, gy.gamma, H.axis).h; tr = 0; }   // YENİ: yumşaq start bitənə qədər (1 san) düzəliş yoxdur   // start anı: giroskop silkələnir, 0,5 san düzəliş vurulmur      // >100: yavaş tərəf əks istiqamətə fırlanır, robot tez qayıdır
     trimWrite(tr);
     holdInfo('Düz getmə: hədəf ' + f1(H.target) + '° · sapma ' + (err > 0 ? '+' : '') + f1(err) + '° · düzəliş ' + Math.round(tr * (turnInvert ? -1 : 1)) + '%');
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function holdHook(c) {
     if (typeof c !== 'string' || c.length !== 1) return;
     if (c === 'F' || c === 'B') holdKeep(c); else if ('SLRQE'.indexOf(c) >= 0) holdEnd(c);
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   window.addEventListener('pagehide', function () { clearInterval(hdgHold.tmr); });
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
@@ -1506,6 +1527,7 @@
   async function wait(ms) { var end = Date.now() + ms; while (Date.now() < end) { chk(); await sleep(Math.max(1, Math.min(100, end - Date.now()))); } }
   // Əmri vaxt bitənə qədər 300 ms-dən bir təkrarlayır, sonra DƏRHAL Dayan (S) göndərir (iki dəfə, itkiyə qarşı)
   var KEEP_MS = 300;
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   async function holdFor(cmd, ms) {
     if ((cmd === 'L' || cmd === 'R') && turnInvert) cmd = cmd === 'L' ? 'R' : 'L';           // motor naqili tərsdirsə ("Dönmə istiqaməti tərsdir"), xam L/R də tərsinə göndərilir
     var end = Date.now() + ms, soft = (cmd === 'F' || cmd === 'B') && ms >= 1500 && ms < 100000, softAt = end - 700, softDone = false;
@@ -1520,7 +1542,10 @@
       }
     } finally { send('S'); setTimeout(function () { send('S'); }, 120); if (softDone) setTimeout(function () { send(driveCmd()); }, 400); }
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   async function moveFor(cmd, ms) { chk(); await holdFor(cmd, connected ? ms : Math.min(ms, 200)); await wait(connected ? 450 : 100); }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
 
 
   // ---------- Giroskop: telefonun DeviceOrientation məlumatı + dəqiq bucaqla dönmə ----------
@@ -1530,6 +1555,7 @@
   var liveAt = {};
   function liveSend(key, fn) { var n = Date.now(); if (connected && BT && n - (liveAt[key] || 0) >= 80) { liveAt[key] = n; send(fn()); } }
   function pctToPwm(pct) { return Math.max(0, Math.min(255, Math.round((pct / 100) * 255))); }   // 0% -> 0, 100% -> 255
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function pctCmd() { return 'P' + pctToPwm(turnPct) + '\n'; }                                    // dönmə sürəti: P<0..255>\n (Arduino toInt kimi tam ədəd oxuyur)
   var gyroMode = sget('gyro_mode', 'auto');
   var turnInvert = sget('turn_invert', '0') === '1';                    // 1 = motor naqilləri tərsdir: Q/E fiziki olaraq əks tərəfə döndərir (avtomatik aşkarlanır)
@@ -1568,8 +1594,12 @@
     else { vx = -(cy * sz * sx + cz * sy); vy = -(sz * sy - cz * cy * sx); }   // arxa kameranın baxdığı tərəf (dik vəziyyət)
     return { h: (Math.atan2(vx, vy) * 180 / Math.PI + 360) % 360, mag: Math.hypot(vx, vy) };
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function pickAxis(hy, hz) { return gyroMode === 'flat' ? 'y' : gyroMode === 'upright' ? 'z' : (hy.mag >= hz.mag ? 'y' : 'z'); }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   function f1(x) { return x == null || isNaN(x) ? '—' : (Math.round(x * 10) / 10).toFixed(1); }
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function gyAge() { return Date.now() - Math.max(gy.lastAt || 0, gy.rateAt || 0); }                  // Chrome orientasiya hadisəsini yalnız DƏYİŞİKLİKDƏ göndərir: dayanan robotda hadisə gəlməməsi nasazlıq deyil
   function gyroReady() { return gy.on && connected && !!BT && gy.alpha !== null && (Date.now() - gy.lastAt) < 60000; }
 
@@ -1595,14 +1625,18 @@
     $('gyState').textContent = !gy.on ? 'Giroskop aktiv deyil' : (gyAge() < 4000 ? '✅ Giroskop işləyir' + (gy.abs ? ' (mütləq)' : ' (nisbi)') + (now - gy.rateAt < 500 ? ' + sürət sensoru' : '') : '⚠ Məlumat gəlmir');
     $('gyBtn').textContent = gy.on ? '✅ Giroskop aktivdir' : '🧭 Giroskopu aktivləşdir (icazə ver)';
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
 
   // ---- DAYAN: S əmri bir dəfə yox, bir neçə dəfə göndərilir (Bluetooth paketi itərsə belə robot dayansın) ----
   var burstTok = 0;
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function stopBurst() {
     var tok = ++burstTok; send('S');
     [40, 100, 200, 350, 600, 900].forEach(function (t) { setTimeout(function () { if (tok === burstTok && !(gt && !gt.done)) send('S'); }, t); });
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   // ---- Dönmə bucağının qiymətləndirilməsi: HƏR sensor hadisəsində çağırılır, hədəfə çatan AN S göndərir ----
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function evalTurn() {
     if (!gt) return;
     if (gt.rateOk) {                                                           // iki müstəqil ölçmə: (1) bucaq sürəti inteqralı = FİZİKİ sağa-sol (telefonun necə qoyulmasından asılı deyil), (2) kompas/orientasiya
@@ -1622,6 +1656,8 @@
       gt.done = true; gt.cumAtDone = gt.cum; gt.doneAt = Date.now(); stopBurst();
     }
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function onOriAbs(e) { if (Date.now() - (gy.plainAt || 0) > 1200) onOri(e, true); }          // adi hadisə gəlmirsə (alpha=null), mütləq hadisə ehtiyat olaraq istifadə olunur
   function onOri(e, abs) {
     if (e.alpha == null || e.beta == null || e.gamma == null) return;
@@ -1638,7 +1674,9 @@
     }
     renderGyro(false);
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   // İkinci, müstəqil ölçmə: giroskopun bucaq sürəti (rotationRate) inteqral edilir. Maqnit sahəsindən (motorlar) təsirlənmir.
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function onMotion(e) {
     var rr = e.rotationRate; if (!rr || rr.alpha == null || rr.beta == null || rr.gamma == null) return;
     var now = performance.now(), dt = gy.rateT ? Math.min(0.2, (now - gy.rateT) / 1000) : 0; gy.rateT = now; gy.rateAt = Date.now();
@@ -1648,6 +1686,8 @@
     gt.cumR += (-yawCCW) * dt * gt.sign;                                          // sağa (saat əqrəbi) müsbət
     evalTurn();
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function gyroStart() {
     var D = window.DeviceOrientationEvent, M = window.DeviceMotionEvent;
     if (!D) { $('gyState').textContent = '⚠ Bu cihazda giroskop yoxdur'; warn('Bu cihazda giroskop (DeviceOrientation) dəstəklənmir. Vaxt ilə dönmə istifadə olunacaq.', true); return; }
@@ -1663,6 +1703,7 @@
       D.requestPermission().then(function (s) { if (s === 'granted') pm.then(function (ms) { attach(ms === 'granted'); }); else warn('Giroskop icazəsi verilmədi', true); }).catch(function () { warn('Giroskop icazəsi alınmadı', true); });
     } else attach(true);
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   $('gyBtn').addEventListener('click', gyroStart);
   $('gyZero').addEventListener('click', function () { gy.zero = gy.heading; gy.lastRes = ''; renderGyro(true); });
   $('gyMode').addEventListener('change', function () { gyroMode = this.value; sset('gyro_mode', gyroMode); });
@@ -1673,6 +1714,7 @@
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
   // Giroskop HƏMİŞƏ işlək olsun: söndüyü/susduğu halda özü yenidən qoşulur
   var gyReAt = 0, needPerm = !!(window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission === 'function');
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function gyroReattach() {
     gyReAt = Date.now();
     try {
@@ -1682,6 +1724,7 @@
       gy.on = true;
     } catch (e) {}
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   setInterval(function () {
     var n = Date.now(); if (n - gyReAt < 2500) return;
     if (!gy.on) { if (!needPerm) { gyReAt = n; gyroStart(); } }
@@ -1693,6 +1736,7 @@
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
 
   // Bağlı dövrə (closed-loop) dönmə: startAlpha-dan hədəf bucağa qədər zəif sürətlə dön, hədəfə çatan AN Dayan (S)
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   // ---------- DÖNMƏ: TƏK ƏMR, GİROSKOPA BAĞLI ----------
   // "sağa dön" = 90°. Əmr bir dəfə verilir, robot giroskopla hədəf bucağa çatana qədər dönür, hədəfə çatanda DAYANIR.
   // Dayanma anı bucaq sürətinə görə əvvəlcədən hesablanır (əyləc gecikməsi). Geri düzəliş, təkrar cəhd, öyrənmə və avtomatik sürət dəyişmə YOXDUR.
@@ -1732,9 +1776,11 @@
     if (!gyroReady()) throw new Error('Giroskop aktiv deyil, dönmə icra olunmadı');
     return gyroTurn(dir, deg);
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
 
   // ---------- Dəqiq hərəkət: bucaq və məsafə ----------
   // "sağa dön" = 90°, "sağa 45 dərəcə dön", "geriyə dön" = 180°, "irəli 1 metr get", "irəli get" = standart məsafə, "dayanmadan irəli get" = fasiləsiz
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function planMove(r) {
     var d = r.drive, amt = parseFloat(r.amount), unit = String(r.unit || '').toLowerCase(), cont = (r.continuous === true || r.continuous === 'true');
     var names = { F: 'irəli', B: 'geri', L: 'sola', R: 'sağa' }, plan = { cmd: d, ms: 0, label: '', clamped: false };
@@ -1756,6 +1802,8 @@
     plan.ms = Math.max(60, Math.round(plan.ms));
     return plan;
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   async function doDrive(r) {
     if (!/^[FBLRS]$/.test(r.drive || '')) return;
     if (r.drive === 'S') { abortMission(); send('S'); note(''); return; }
@@ -1778,6 +1826,7 @@
     }
     await runMission(plan.label, async function () { mission.timed = true; await holdFor(plan.cmd, plan.ms); });
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
     if (mission) mission.abort = true;
@@ -1838,7 +1887,9 @@
   var voiceOn = false, activeUntil = 0, convo = false, AWAKE_MS = 10000, STOP_NEEDS_NAME = false;
   var acting = false, busy = 0, isListening = false, isProcessing = false;
   var chatLog = [], overheard = [], heardLines = [], lastHeardN = '', lastHeardT = 0;
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function micOpen() { return voiceOn && !isRateLimited && !isSpeaking && Date.now() >= ttsBusyUntil; }
+  // 🔒 SON [Səs qəbulu və tanıma]
   function micUpdate() { isProcessing = busy > 0 || acting || !!mission; isListening = micOpen(); }
   function goSleep() { activeUntil = 0; convo = false; try { if (voiceOn && !isSpeaking) updateVoiceBtn('idle'); } catch (e) {} }
   function updateVoiceBtn(state) {
@@ -2287,12 +2338,15 @@
     await runIntent(r, { b64: c.b64, heard: heard });
   }
   // v47: 1) səs sözbəsöz DƏQİQ yazıya çevrilir (heç nə əlavə edilmir), 2) yalnız ondan sonra mətn əsasında qərar verilir
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function isStopWord(text) {
     var t = norm(text).split(' ').filter(Boolean), i;
     if (!t.length || t.length > 4) return false;
     for (i = 0; i < t.length; i++) if (t[i].indexOf('dayan') === 0 || t[i] === 'dayin' || t[i] === 'stop' || t[i] === 'stob' || t[i] === 'saxla' || t[i] === 'dur' || t[i] === 'durun' || t[i] === 'besdir') return true;
     return false;
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function stopIsEcho(text) {                                                          // robot özü "dayan/stop" sözünü deyirsə və mikrofon onu geri eşidirsə, bu əmr SAYILMIR
     if (!lastSpokenNorm) return false;
     var recent = isSpeaking || Date.now() - lastSpeakEnd < 2500; if (!recent) return false;
@@ -2300,6 +2354,8 @@
     for (i = 0; i < toks.length; i++) { if (isStopWord(toks[i])) { found = true; if (sp.indexOf(' ' + toks[i] + ' ') < 0) return false; } }
     return found;
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   async function transcribeStrict(b64) {
     var vocab = 'irəli, geri, sağa, sola, dön, get, gəl, dayan, dərəcə, santimetr, metr, saniyə, qapı, yaxınlaş, nağıl, bax, oxu, Bluetooth, qoşul, bağlan, ayrıl, çıx' + (robotName ? ', ' + robotName : '');
     var p = 'TASK:TRANSCRIBE\nTranscribe EXACTLY the words spoken in this audio. The language is Azerbaijani (sometimes Turkish, Russian or English).\n' +
@@ -2316,10 +2372,12 @@
     var text = String(r.text == null ? '' : r.text).trim();
     var cf = parseFloat(r.confidence), needDir = /\b(sag|saga|sol|sola)\b/.test(norm(text)); return { text: text, clear: isNaN(cf) ? true : cf >= (needDir ? 0.7 : 0.5) };   // sağ/sol sözündə səhv bahalıdır: daha yüksək əminlik
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
   function askRepeat() {
     var arr = ['Bağışla, tam eşitmədim. Adımı çəkib təkrar de.', 'Düz anlamadım. Adımı çəkib bir də de.'], t = arr[Math.floor(Math.random() * arr.length)];
     chatLine('bot', t); remember('Robot', t); speak(t, 'ack').catch(function () {});
   }
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   async function routeAudio(wav, meta) {
     var b64 = await blobToBase64(wav), active = Date.now() < activeUntil;
     var tT0 = Date.now(), tr = await transcribeStrict(b64), text = tr.text; dbgWhy = 'Gemini ' + (Date.now() - tT0) + ' ms';
@@ -2343,6 +2401,7 @@
     r.heard = text;                                                                                                                         // ekranda göstərilən mətn = eşidilən dəqiq mətn
     await dispatch(r, { text: text, called: called, b64: b64, meta: meta });
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
   async function routeText(text, called) {
     var active = Date.now() < activeUntil;
     var t = await gemini([{ text: routerPrompt(active, true) + '\nUser said: ' + JSON.stringify(text) }], { json: true, maxTokens: 900, fast: true, timeout: 9000 });
@@ -2350,6 +2409,7 @@
     r.heard = text;
     await dispatch(r, { text: text, called: called });
   }
+  // 🔒 QIFILLI [Bluetooth səs idarəsi]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   // ---------- Səslə Bluetooth: «Bluetooth-a qoşul» / «Bluetooth-dan ayrıl» ----------
   function btWord(n) {                                                                  // "Bluetooth" sözünün bütün yazılışları: bluetooth, blutuz, blyutus, blu tuz, bulutuz ... (samit skeleti "blt…" ilə)
     var t = n.split(' ').filter(Boolean), i, j, w;
@@ -2378,6 +2438,8 @@
       disconnect(); ack('Bluetooth-dan ayrıldım.');
     }
   }
+  // 🔒 SON [Bluetooth səs idarəsi]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function execLocal(cmd, heard) {                                   // sadə hərəkət əmri: Gemini-siz
     if (acting && cmd.drive !== 'S') return;
     if (dupDrive(cmd)) return;
@@ -2386,10 +2448,12 @@
     if (cmd.drive === 'S') { abortMission(); stopBurst(); }
     doDrive(cmd).catch(function (e) { if (!(e && e.abort)) warn(e && e.message ? e.message : 'Xəta', true); });
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
 
   // ---------- brauzer tanıması (varsa) ----------
   var rec = null;
   var lastStopHeardT = 0;
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function onBrowserText(alts, conf) {
     if (voiceOn) {                                                                      // DAYAN hər şeydən üstündür: robot danışsa da, mikrofon bağlı olsa da, ad çəkilməsə də dərhal işləyir
       var sa = (alts || []).filter(function (t) { return t && isStopWord(t) && !stopIsEcho(t); });
@@ -2414,6 +2478,8 @@
     busy++; micUpdate();
     routeText(text, called).catch(function (e) { warn(e && e.message ? e.message : 'Xəta', true); }).then(function () { busy--; micUpdate(); });
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function startBrowser() {
     if (!SRC) { note('Bu mühitdə brauzer tanıması yoxdur. «Gemini» üsulunu seçin.'); return false; }
     try {
@@ -2432,6 +2498,7 @@
       rec.start(); return true;
     } catch (e) { note('Səs tanıma başlamadı'); return false; }
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
   function stopBrowser() { try { if (rec) { rec.onend = null; rec.onresult = null; rec.stop(); } } catch (e) {} rec = null; }
 
   // ---------- Gemini üçün mikrofon + nitq aşkarlama ----------
@@ -2463,7 +2530,10 @@
   function blobToBase64(blob) {
     return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = rej; r.readAsDataURL(blob); });
   }
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function resetVad() { speaking = false; speech = []; preRoll = []; onsetN = 0; voicedMs = 0; peakRms = 0; silenceMs = 0; speechMs = 0; }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function handleUtterance(chunks, meta) {
     var pcm = downsample(concat(chunks), curRate, 16000);
     if (pcm.length < 16000 * 0.2) { dbgWhy = 'atıldı: çox qısa'; apiStats.skipped++; updateApiInfo(); return; }
@@ -2482,7 +2552,9 @@
     if (routing && Date.now() - routeStartT < 2500) { pendingU = { wav: wav, meta: meta, t: Date.now() }; return; }   // əvvəlki sorğu yenicə başlayıbsa ən yenisi gözləyir
     runRoute(wav, meta);                                                                                  // əvvəlki sorğu 2,5 san-dən çox çəkibsə (yavaş şəbəkə), yeni səs gözləmir: PARALEL işlənir
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
   var routeStartT = 0;
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function runRoute(wav, meta) {
     routing = true; routeStartT = Date.now(); busy++; micUpdate();
     routeAudio(wav, meta).catch(function (e) { warn(e && e.message ? e.message : 'Xəta', true); chatLine('sys', e && e.message ? e.message : 'Xəta'); }).then(function () {
@@ -2492,6 +2564,8 @@
       else if (voiceOn && !isSpeaking) updateVoiceBtn(busy ? 'send' : 'idle');
     });
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function finishUtterance() {
     var s = speech, meta = { voicedMs: voicedMs, snr: noise > 0 ? peakRms / noise : 99 }, dens = speechMs ? voicedMs / speechMs : 0, mo = Date.now() < motorRunUntil + 600;
     speaking = false; speech = []; silenceMs = 0; onsetN = 0;
@@ -2502,6 +2576,8 @@
     handleUtterance(s, meta);
     setTimeout(function () { if (voiceOn && !isSpeaking && !busy && !routing && !acting) updateVoiceBtn('idle'); }, 2600);
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function pitchStrength(x, rate) {                                                      // avtokorrelyasiya: insan səsi (75-400 Hz dövri) vs motor küyü
     var dec = Math.max(1, Math.round(rate / 12000)), r = rate / dec, m = Math.floor(x.length / dec), y = new Float32Array(m), i, lag, k;
     for (i = 0; i < m; i++) y[i] = x[i * dec];
@@ -2513,6 +2589,8 @@
     }
     return best;
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function processChunk(chunk, rate) {
     if (!voiceOn || isRateLimited) return;
     if (!micOpen()) { if (speaking || speech.length || preRoll.length) resetVad(); return; }          // robot danışarkən heç nə qəbul edilmir
@@ -2539,8 +2617,10 @@
       if (silenceMs > hang || speechMs > 20000) finishUtterance();
     }
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
   function micPermission(cb) { permAsync(PERM_MIC).then(cb); }
   var micStarting = false, micFails = 0;
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function startMic(isRestart) {
     if (micStarting) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { warn('Bu mühitdə mikrofon dəstəklənmir', true); stopVoice(); return; }
@@ -2573,7 +2653,11 @@
       });
     });
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   var bpNodes = [];
+  // 🔒 SON [Səs qəbulu və tanıma]
+  // 🔒 QIFILLI [Səs qəbulu və tanıma]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function stopMic() {
     try { bpNodes.forEach(function (n) { n.disconnect(); }); } catch (e) {} bpNodes = [];
     try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) {}
@@ -2582,6 +2666,7 @@
     try { if (ctx) ctx.close(); } catch (e) {}
     proc = srcNode = stream = ctx = null; resetVad();
   }
+  // 🔒 SON [Səs qəbulu və tanıma]
   setInterval(function () {                                           // mikrofon donarsa / sistem götürərsə özü yenidən açılır
     if (!voiceOn || VS.engine !== 'gemini' || micStarting || !ctx) return;
     if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
@@ -2646,6 +2731,7 @@
     return null;
   }
   // "sağa dön" -> R 90°, "35 dərəcə sağa dön" -> R 35°, "geriyə dön" -> R 180°, "irəli 50 sm get" -> F 50 sm
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function parseVoiceFull(text) {
     var words = norm(text).split(/\s+/).filter(Boolean), has = function (a) { return a.some(function (x) { return words.indexOf(x) !== -1; }); };
     var turn = has(['don', 'donun', 'dondur', 'derece']), num = findNumber(words);
@@ -2664,6 +2750,7 @@
     }
     return { drive: c };
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   // ===== YERLİ ƏMR FİLTRİ (Local Keyword Guard) =====
   // Mətndə təməl hərəkət sözü varsa -> əmr LOKAL işlənir, Gemini-yə sorğu QƏTİYYƏN getmir.
   // Yalnız uzun (>8 söz) və ya sual/söhbət xarakterli cümlələr Gemini-yə keçir.
@@ -2688,6 +2775,7 @@
     for (var i = 0; i < GUARD_KW.length; i++) { var d = lev(w, GUARD_KW[i]); if (d <= lim && d < bd) { bd = d; best = GUARD_KW[i]; } }
     return best || w;
   }
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function localKeywordGuard(text) {
     var n = norm(text); if (!n) return null;
     if (/\bsag ?ol/.test(n) || /\b(tesekkur|salam|sagolun)\b/.test(n)) return null;   // "sağ ol" = təşəkkür, sağa dön deyil
@@ -2713,6 +2801,7 @@
     if (kwL) return { drive: 'L' };
     return null;
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   // ===== 1-ci MƏRHƏLƏ: YERLİ KOMANDA BAZASI (Local Dictionary) =====
   // Açar = deyilən ifadə (oyanma sözü "ziko" avtomatik kənarlaşdırılır, ona görə "ziko sağa dön" də "sağa dön" kimi tapılır).
   // Dəyər = icra olunacaq əmr. Yeni variant əlavə etmək üçün sadəcə siyahıya yazın.
@@ -2733,6 +2822,7 @@
     if (isZikoName(rn)) { w.ziko = w.zeko = w.ziqo = w.zigo = w.siko = w.zico = 1; }      // "Ziko" üçün yaxın səhv eşitmələr; başqa adda (məs. "alo") yalnız yazılan ad
     return w;
   }
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function dbLookup(text) {
     if (!LOCAL_MAP) {                                                                // bir dəfə qurulur: normallaşdırılmış açar -> əmr
       LOCAL_MAP = {};
@@ -2744,7 +2834,9 @@
     var hit = LOCAL_MAP[toks.join(' ')];
     return hit ? JSON.parse(JSON.stringify(hit)) : null;
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   // 1) dəqiq baza axtarışı -> 2) (hələ yerli) dərəcə/sm/yazılış variantları -> tapılmasa null => yalnız onda Gemini
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   // ---------- ƏSAS HƏRƏKƏT ƏMRLƏRİ: sağa / sola / irəli / geri / geriyə dön — bütün yazılış və səhv eşitmə variantları, Gemini-siz, DƏQİQ ----------
   var BM_ALIAS = {
     R: 'saga sag saqa sagha sagh saaga sagg sagi napravo vpravo right rayt',
@@ -2793,7 +2885,10 @@
     if (cls.B && !cls.F && !rl) return num > 0 ? { drive: 'B', amount: num, unit: unit && unit !== 'deg' ? unit : 'cm' } : { drive: 'B' };
     return null;
   }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
+  // 🔒 QIFILLI [Hərəkət əmrləri və dönmə]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
   function localSimpleCommand(text) { if (isCompoundMove(text)) return null; return basicMotion(text) || dbLookup(text) || localKeywordGuard(text); }
+  // 🔒 SON [Hərəkət əmrləri və dönmə]
   var lastDriveSig = '', lastDriveT = 0;
   function dupDrive(c) {                                                             // eyni hərəkət əmri 3 san ərzində iki yolla gəlsə, ikincisini at ("dayan" həmişə keçir)
     if (!c || c.drive === 'S') return false;
