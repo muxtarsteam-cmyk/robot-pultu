@@ -277,6 +277,9 @@
     <div class="row"><label for="defCm">Standart məsafə (sm)</label><input id="defCm" type="number" min="5" max="300" step="5"></div>
     <div class="row"><label>Məsafə kalibrasiyası</label><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="calCmd" type="number" value="100" style="width:70px"> sm əmr verdim, robot <input id="calReal" type="number" placeholder="real" style="width:70px"> sm getdi <button id="calApply">Düzəlt</button> <button id="calReset">↺</button></div></div>
     <div class="row"><span id="calInfo" style="font-size:11px;color:var(--muted)"></span></div>
+    <div class="row"><label for="dsPos">Xətlərin yeri (% aşağıdan)</label><input id="dsPos" type="text" placeholder="12,26,40,54,68,82"></div>
+    <div class="row"><label for="dsCm">Xəttə düşəndə qalan (sm)</label><input id="dsCm" type="text" placeholder="20,30,45,65,90,130"></div>
+    <div class="hint">Kamerada aşağıdan yuxarı məsafə xətləri çəkilir (azdan çoxa). Əşyanın yerə dəydiyi nöqtə hansı xəttə düşürsə, robot ora qədər olan məsafəni yuxarıdakı sm dəyərindən götürür. Eyni say qədər yer və sm yazın, vergüllə ayırın. Xətlər arası dəyərləri robot özü hesablayır.</div>
     <div class="row"><label for="rpmLimit">Limit: dəqiqədə</label><input id="rpmLimit" type="number" min="1" max="1000" step="1"></div>
     <div class="row"><label for="rpdLimit">Limit: gündə</label><input id="rpdLimit" type="number" min="1" max="100000" step="10"></div>
     <div class="row"><button id="limReset" style="flex:1">Limit sayğacını sıfırla</button></div>
@@ -306,6 +309,7 @@
     <div class="fsrow"><button id="fsOn" style="flex:1"></button></div>
     <div class="fsrow"><button id="fsMir" style="flex:1"></button></div>
     <div class="fsrow"><button id="fsRot" style="flex:1"></button></div>
+    <div class="fsrow"><button id="fsAuto" style="flex:1"></button></div>
   </div>
 </div>
 <script src="cordova.js"></script>
@@ -1740,12 +1744,14 @@
     maxW = maxW || 512; q = q || 0.6;
     var vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) throw new Error('Kameradan kadr gəlmir');
-    var s = Math.min(1, maxW / vw);
-    cvs.width = Math.round(vw * s); cvs.height = Math.round(vh * s);
+    var rd = (typeof camRotDeg !== 'undefined' ? camRotDeg : 0), sw = (rd === 90 || rd === 270), dwid = sw ? vh : vw, dhei = sw ? vw : vh;      // 90°/270° dönəndə kadrın eni-hündürlüyü yerini dəyişir
+    var s = Math.min(1, maxW / dwid);
+    cvs.width = Math.round(dwid * s); cvs.height = Math.round(dhei * s);
     var gx = cvs.getContext('2d'); gx.setTransform(1, 0, 0, 1, 0, 0);
-    var fm = (typeof camMirror !== 'undefined' && camMirror), fr = (typeof camRot !== 'undefined' && camRot), fx = (fm ? -1 : 1) * (fr ? -1 : 1), fy = fr ? -1 : 1;   // ekranda görünən kimi: güzgü və/və ya tərs çevirmə Gemini-yə də eyni gedir
-    gx.setTransform(fx, 0, 0, fy, fx < 0 ? cvs.width : 0, fy < 0 ? cvs.height : 0);            // kamera güzgü kimi verirsə, Gemini-yə düzgün sağ-sol getsin
-    gx.drawImage(video, 0, 0, cvs.width, cvs.height); gx.setTransform(1, 0, 0, 1, 0, 0);
+    gx.translate(cvs.width / 2, cvs.height / 2);
+    if (typeof camMirror !== 'undefined' && camMirror) gx.scale(-1, 1);              // ekranda görünən kimi: əvvəl dönmə, sonra güzgü (Gemini-yə ekrandakı eyni kadr gedir)
+    gx.rotate(rd * Math.PI / 180);
+    gx.drawImage(video, -vw * s / 2, -vh * s / 2, vw * s, vh * s); gx.setTransform(1, 0, 0, 1, 0, 0);
     return cvs.toDataURL('image/jpeg', q).split(',')[1];
   }
   camBtn.addEventListener('click', function () { camStream ? stopCamera() : startCamera(); });
@@ -2712,20 +2718,28 @@
 
   // ---------- Əmrlərin işlənməsi ----------
   // ---------- Tam ekran kamera + məsafə zolaqları (arxa kamera sistemi kimi) və məsafə kalibrasiyası ----------
-  var camMirror = sget('cam_mirror', '0') === '1', camRot = sget('cam_rot', '0') === '1', fsMark = null;
+  var camMirror = true, /* güzgü HƏMİŞƏ açıq */ camRotDeg = +sget('cam_rot90', '90') || 0, camBase = camRotDeg, camAuto = +sget('cam_auto', '1') || 0, autoAdd = 0, autoSnap = 0, autoCand = null, autoT = 0, gfx = 0, gfy = 9.8, fsMark = null;
   var fsH = +sget('fs_h', 15), fsT = +sget('fs_t', 10), fsV = +sget('fs_v', 50), fsW = +sget('fs_w', 20), fsOn = sget('fs_on', '1') === '1';
   var camFS = $('camFS'), fsv = $('camFSv'), fsc = $('camFSc');
-  function applyMirror() { video.classList.toggle('mir', camMirror); fsv.classList.toggle('mir', camMirror); video.classList.toggle('rot', camRot); fsv.classList.toggle('rot', camRot); }
+  function applyMirror() {                                                                  // güzgü + 90° sağa dönmə: kiçik önbaxış və tam ekran video
+    var tf = (camMirror ? 'scaleX(-1) ' : '') + 'rotate(' + camRotDeg + 'deg)', sw = (camRotDeg === 90 || camRotDeg === 270), W = camFS.clientWidth, H = camFS.clientHeight, ww = 128, wh = 96;
+    video.classList.remove('mir', 'rot'); fsv.classList.remove('mir', 'rot');
+    video.style.transform = tf; fsv.style.transform = tf;
+    if (sw) { video.style.width = wh + 'px'; video.style.height = ww + 'px'; } else { video.style.width = ''; video.style.height = ''; }
+    if (sw && W && H) { fsv.style.width = H + 'px'; fsv.style.height = W + 'px'; fsv.style.left = ((W - H) / 2) + 'px'; fsv.style.top = ((H - W) / 2) + 'px'; }
+    else { fsv.style.width = '100%'; fsv.style.height = '100%'; fsv.style.left = '0'; fsv.style.top = '0'; }
+  }
   function fsLabels() {
     $('fsHv').textContent = fsH + ' sm'; $('fsTv').textContent = fsT + '°'; $('fsVv').textContent = fsV + '°'; $('fsWv').textContent = fsW + ' sm';
-    $('fsOn').textContent = fsOn ? 'Zolaqlar: açıq' : 'Zolaqlar: bağlı'; $('fsMir').textContent = camMirror ? '↔ Güzgü: açıq' : '↔ Güzgü: bağlı'; $('fsRot').textContent = camRot ? '🔃 Tərs çevir: açıq' : '🔃 Tərs çevir: bağlı';
+    $('fsOn').textContent = fsOn ? 'Məsafə xətləri: açıq' : 'Məsafə xətləri: bağlı'; $('fsMir').textContent = camMirror ? '↔ Güzgü: açıq' : '↔ Güzgü: bağlı'; $('fsRot').textContent = '🔃 Əsas dönmə: ' + camBase + '° (bas: +90°), indi: ' + camRotDeg + '°'; $('fsAuto').textContent = ['🧭 Avto yön: bağlı', '🧭 Avto yön: açıq', '🧭 Avto yön: açıq (əks)'][camAuto] || '🧭 Avto yön';
   }
   function drawBands() {
     var W = camFS.clientWidth, H = camFS.clientHeight; if (!W || !H) return;
     fsc.width = W; fsc.height = H; var g = fsc.getContext('2d'); g.clearRect(0, 0, W, H);
     var vw = video.videoWidth || fsv.videoWidth, vh = video.videoHeight || fsv.videoHeight; if (!vw || !vh) return;
-    var sc = Math.min(W / vw, H / vh), dw = vw * sc, dh = vh * sc, ox = (W - dw) / 2, oy = (H - dh) / 2;
-    var T = fsT * Math.PI / 180, tv = Math.tan(fsV * Math.PI / 360), th = tv * (dw / dh);
+    var swp = (camRotDeg === 90 || camRotDeg === 270), rw = swp ? vh : vw, rh = swp ? vw : vh;                // ekranda görünən (dönmüş) kadr
+    var sc = Math.min(W / rw, H / rh), dw = rw * sc, dh = rh * sc, ox = (W - dw) / 2, oy = (H - dh) / 2;
+    var T = fsT * Math.PI / 180, tv0 = Math.tan(fsV * Math.PI / 360), th0 = tv0 * (vw / vh), tv = swp ? th0 : tv0, th = swp ? tv0 : th0;
     (function () {                                                                         // DƏRƏCƏ XƏTLƏRİ: ortada 0°, hər 1° bir xətt (sağda +, solda −), ekran dolana qədər
       function ax(a) { return ox + (0.5 + Math.tan(a * Math.PI / 180) / (2 * th)) * dw; }
       var step = Math.abs(ax(1) - ax(0)), every = step >= 15 ? 1 : step >= 8 ? 2 : 5, a, sg, x;
@@ -2740,13 +2754,21 @@
       if (fsMark) {                                                                         // hədəfin bucağı (yaxınlaşma zamanı)
         x = ax(fsMark.deg); if (x >= ox && x <= ox + dw) {
           g.beginPath(); g.lineWidth = 4; g.strokeStyle = '#f97316'; g.moveTo(x, oy); g.lineTo(x, oy + dh); g.stroke();
-          var tx = String(fsMark.name || 'hədəf') + ' ' + (fsMark.deg > 0 ? '+' : '') + fsMark.deg.toFixed(1) + '°'; g.font = 'bold 16px sans-serif'; g.textBaseline = 'middle';
+          var tx = String(fsMark.name || 'hədəf') + ' ' + (fsMark.deg > 0 ? '+' : '') + fsMark.deg.toFixed(1) + '°' + (fsMark.cm ? ' · ' + Math.round(fsMark.cm) + ' sm' : ''); g.font = 'bold 16px sans-serif'; g.textBaseline = 'middle';
           var tw = g.measureText(tx).width + 12; g.fillStyle = '#f97316'; g.fillRect(Math.min(Math.max(ox, x - tw / 2), ox + dw - tw), oy + dh / 2 - 12, tw, 24); g.fillStyle = '#000'; g.fillText(tx, Math.min(Math.max(ox + tw / 2, x), ox + dw - tw / 2), oy + dh / 2);
         }
       }
       g.textAlign = 'start'; g.textBaseline = 'middle';
     })();
-    if (!fsOn) return;
+    if (fsOn) {                                                                           // MƏSAFƏ XƏTLƏRİ: aşağıdan yuxarı azdan çoxa, hər xəttdə sm yazılır
+      var pts = dsPoints(); g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = 'bold 14px sans-serif';
+      pts.forEach(function (q, k) {
+        var y = oy + dh * (1 - q.p), col = 'hsl(' + Math.round(120 * (pts.length > 1 ? 1 - k / (pts.length - 1) : 1) * 0 + (k / Math.max(1, pts.length - 1)) * 120) + ',85%,55%)';   // yaxın: qırmızı, uzaq: yaşıl
+        g.beginPath(); g.lineWidth = 2.5; g.strokeStyle = col; g.moveTo(ox, y); g.lineTo(ox + dw, y); g.stroke();
+        var tx = Math.round(q.c) + ' sm', tw = g.measureText(tx).width + 10; g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(ox + 4, y - 11, tw, 22); g.fillStyle = col; g.fillText(tx, ox + 9, y);
+      });
+    }
+    return;                                                                               // köhnə yer proyeksiyası zolaqları artıq istifadə olunmur (aşağıdakı kod keçilir)
     function proj(d, x) {                                                                  // yer müstəvisindəki nöqtə -> ekran (kamera hündürlüyü, meyl və görmə bucağı ilə)
       var z = d * Math.cos(T) + fsH * Math.sin(T), y = -d * Math.sin(T) + fsH * Math.cos(T); if (z <= 1) return null;
       return { x: ox + (0.5 + (x / z) / (2 * th)) * dw, y: oy + (0.5 + (y / z) / (2 * tv)) * dh };
@@ -2768,14 +2790,14 @@
   async function openCamFS() {
     if (!(await startCamera())) return;
     fsv.srcObject = camStream; try { await fsv.play(); } catch (e) {}
-    try { var so = window.screen && screen.orientation; if (so && so.lock) { var lp = so.lock('landscape'); if (lp && lp.catch) lp.catch(function () {}); } } catch (e) {}   // kamera yatay (landscape) açılır
+    try { var so = window.screen && screen.orientation; if (so && so.lock) { var lp = so.lock(camAuto ? (so.type || 'landscape') : 'landscape'); if (lp && lp.catch) lp.catch(function () {}); } } catch (e) {}   // Avto yön açıqdırsa ekran cari vəziyyətdə qalır, yoxsa yatay
     camFS.style.display = 'block'; applyMirror(); fsLabels(); drawBands();
     clearInterval(openCamFS.t); openCamFS.t = setInterval(drawBands, 1000);
   }
   function closeCamFS() { try { var rf = $('rbFS'); if (!rf || rf.style.display === 'none') { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } } catch (e) {} camFS.style.display = 'none'; clearInterval(openCamFS.t); try { fsv.srcObject = null; } catch (e) {} }
   document.querySelector('.camwrap').addEventListener('click', openCamFS);
   $('camFSx').addEventListener('click', closeCamFS);
-  window.addEventListener('resize', function () { if (camFS.style.display === 'block') drawBands(); });
+  window.addEventListener('resize', function () { if (camFS.style.display === 'block') { applyMirror(); drawBands(); } });
   fsv.addEventListener('loadedmetadata', drawBands);
   [].forEach.call(camFS.querySelectorAll('button[data-k]'), function (b) {
     b.addEventListener('click', function () {
@@ -2788,13 +2810,37 @@
     });
   });
   $('fsOn').addEventListener('click', function () { fsOn = !fsOn; sset('fs_on', fsOn ? '1' : '0'); fsLabels(); drawBands(); });
-  $('fsMir').addEventListener('click', function () { camMirror = !camMirror; sset('cam_mirror', camMirror ? '1' : '0'); applyMirror(); fsLabels(); });
-  $('fsRot').addEventListener('click', function () { camRot = !camRot; sset('cam_rot', camRot ? '1' : '0'); applyMirror(); fsLabels(); });
+  $('fsMir').addEventListener('click', function () { camMirror = true; sset('cam_mirror', '1'); applyMirror(); fsLabels(); });   // güzgü həmişə açıq saxlanılır
+  function recomputeRot() { camRotDeg = (((camBase + (camAuto ? autoAdd : 0)) % 360) + 360) % 360; applyMirror(); fsLabels(); if (camFS.style.display === 'block') drawBands(); }
+  function setAutoAdd() { autoAdd = ((((camAuto === 2 ? 1 : -1) * autoSnap) % 360) + 360) % 360; }
+  $('fsRot').addEventListener('click', function () { camBase = (camBase + 90) % 360; sset('cam_rot90', camBase); recomputeRot(); });
+  $('fsAuto').addEventListener('click', function () { camAuto = (camAuto + 1) % 3; sset('cam_auto', camAuto); setAutoAdd(); recomputeRot(); });
+  // Avtomatik yön: telefonu hansı tərəfə çevirsəniz, şəkil o tərəfdən yuxarı dururlur (cazibə sensoru ilə, 90° addımla). Səhv tərəfə dönürsə «əks» rejimi seçin
+  window.addEventListener('devicemotion', function (e) {
+    if (!camAuto) return; var a = e.accelerationIncludingGravity; if (!a || a.x == null || a.y == null) return;
+    gfx += 0.15 * (a.x - gfx); gfy += 0.15 * (a.y - gfy);
+    if (Math.sqrt(gfx * gfx + gfy * gfy) < 3.5 || (typeof mission !== 'undefined' && mission)) return;       // telefon üfüqidir / robot hərəkətdədir: dəyişmə
+    var phi = Math.atan2(gfx, gfy) * 180 / Math.PI, snap = (((Math.round(phi / 90) * 90) % 360) + 360) % 360, d = (((phi - autoSnap) % 360) + 540) % 360 - 180;
+    if (Math.abs(d) > 55) { if (autoCand !== snap) { autoCand = snap; autoT = Date.now(); } else if (Date.now() - autoT > 600) { autoSnap = snap; autoCand = null; setAutoAdd(); recomputeRot(); } }
+    else autoCand = null;
+  });
+  // Məsafə xətləri: aşağıdan yuxarı (azdan çoxa). İstifadəçi hər xəttin yerini (%) və o xəttə düşəndə neçə sm qaldığını yazır
+  var dsPos = sget('ds_pos', '12,26,40,54,68,82'), dsCm = sget('ds_cm', '20,30,45,65,90,130');
+  $('dsPos').value = dsPos; $('dsCm').value = dsCm;
+  function parseNums(t) { return String(t || '').split(/[;,\s]+/).map(parseFloat).filter(function (v) { return isFinite(v) && v >= 0; }); }
+  function dsPoints() { var p = parseNums(dsPos), c = parseNums(dsCm), n = Math.min(p.length, c.length), a = [], i; for (i = 0; i < n; i++) a.push({ p: Math.min(99, p[i]) / 100, c: c[i] }); a.sort(function (x, y) { return x.p - y.p; }); return a; }
+  function distFromY(yb) {                                                              // yb = əşyanın yerə dəydiyi nöqtənin aşağıdan hündürlüyü (0..1) -> sm
+    var a = dsPoints(), i; if (a.length < 2) return null;
+    if (yb <= a[0].p) { var dp = a[1].p - a[0].p; return Math.max(5, dp > 0 ? a[0].c + (yb - a[0].p) * (a[1].c - a[0].c) / dp : a[0].c); }
+    for (i = 1; i < a.length; i++) if (yb <= a[i].p) { var q = a[i].p - a[i - 1].p; return q > 0 ? a[i - 1].c + (yb - a[i - 1].p) * (a[i].c - a[i - 1].c) / q : a[i].c; }
+    return a[a.length - 1].c;
+  }
+  ['dsPos', 'dsCm'].forEach(function (id) { $(id).addEventListener('change', function () { dsPos = $('dsPos').value; dsCm = $('dsCm').value; sset('ds_pos', dsPos); sset('ds_cm', dsCm); try { drawBands(); } catch (e) {} note('Məsafə xətləri saxlanıldı: ' + dsPoints().length + ' xətt'); }); });
   applyMirror();
   // Kadrdakı üfüqi mövqe (0..1) -> bucaq (dərəcə): 0 = düz qarşı, + sağ, − sol. Çəkilən dərəcə xətləri ilə eyni həndəsə
-  function xToDeg(x) {
-    var vw = video.videoWidth || fsv.videoWidth || 4, vh = video.videoHeight || fsv.videoHeight || 3;
-    var th = Math.tan(fsV * Math.PI / 360) * (vw / vh);
+  function xToDeg(x) {                                                                  // dönmüş kadrda ekranın eni = sensorun hündürlüyü (90°/270°)
+    var vw = video.videoWidth || fsv.videoWidth || 4, vh = video.videoHeight || fsv.videoHeight || 3, sw = (camRotDeg === 90 || camRotDeg === 270);
+    var tv0 = Math.tan(fsV * Math.PI / 360), th = sw ? tv0 : tv0 * (vw / vh);
     return Math.atan((x - 0.5) * 2 * th) * 180 / Math.PI;
   }
   // Məsafə kalibrasiyası: "100 sm verdim, robot real X sm getdi" -> sürət (sm/san) avtomatik düzəlir
@@ -2936,7 +2982,7 @@
     for (var it = 0; it < 24; it++) {
       chk();
       setMissionLine('▶ Yaxınlaşıram: ' + tgt.slice(0, 30) + ' (' + (it + 1) + ')');
-      var r = await visionJSON('TASK:APPROACH_LOOK\nA small robot must go close to: "' + tgt + '" (the user may name it differently, any matching thing counts; if several match choose the one closest to the center). Look ONLY at the current camera frame. Reply ONLY JSON: {"visible":true|false,"x":number from 0 to 1 = horizontal center of the target in the frame (0 left edge, 0.5 middle, 1 right edge),"distance_cm":estimated distance from the camera to the target in cm,"name":"what it is, 1-3 words, Azerbaijani","blocked":true|false (true only if ANOTHER thing, such as a wall, furniture or a person, is closer than 30 cm straight ahead on the floor)}');
+      var r = await visionJSON('TASK:APPROACH_LOOK\nA small robot must go close to: "' + tgt + '" (the user may name it differently, any matching thing counts; if several match choose the one closest to the center). Look ONLY at the current camera frame. Reply ONLY JSON: {"visible":true|false,"x":number from 0 to 1 = horizontal center of the target in the frame (0 left edge, 0.5 middle, 1 right edge),"bottom_y":number from 0 to 1 = vertical position of the point where the target touches the floor or its lowest visible edge (0 = top edge of the frame, 1 = bottom edge),"distance_cm":estimated distance from the camera to the target in cm,"name":"what it is, 1-3 words, Azerbaijani","blocked":true|false (true only if ANOTHER thing, such as a wall, furniture or a person, is closer than 30 cm straight ahead on the floor)}');
       var vis = (r.visible === true || r.visible === 'true');
       if (!vis) {
         if (seen) {                                                              // yaxınlaşarkən kadrdan çıxdı
@@ -2949,8 +2995,9 @@
       }
       seen = true; lost = 0; label = String(r.name || label || '').slice(0, 40);
       var x = parseFloat(r.x); if (!(x >= 0 && x <= 1)) x = 0.5;
-      var dist = parseFloat(r.distance_cm); if (!(dist > 0)) dist = lastDist || 100; lastDist = dist;
-      var deg = xToDeg(x); fsMark = { deg: deg, name: label }; try { drawBands(); } catch (e) {}
+      var by = parseFloat(r.bottom_y), dY = (by >= 0 && by <= 1) ? distFromY(1 - by) : null;                  // ekrandakı məsafə xətlərinə görə (istifadəçinin kalibrasiyası)
+      var dist = dY > 0 ? dY : parseFloat(r.distance_cm); if (!(dist > 0)) dist = lastDist || 100; lastDist = dist;
+      var deg = xToDeg(x); fsMark = { deg: deg, name: label, cm: dist }; try { drawBands(); } catch (e) {}
       if (Math.abs(deg) > 2.5) {                                                 // hədəf 0° xəttində deyil: onun dərəcəsi qədər ONA TƏRƏF dön, sonra yenidən kadr çək
         setMissionLine('▶ ' + (label || tgt).slice(0, 20) + ': ' + (deg > 0 ? '+' : '') + deg.toFixed(1) + '° → dönürəm');
         await agentDrive({ op: 'turn', drive: deg > 0 ? 'R' : 'L', amount: Math.max(2, Math.min(60, Math.round(Math.abs(deg)))), unit: 'deg' }); await wait(300); continue;
