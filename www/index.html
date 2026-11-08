@@ -2422,8 +2422,8 @@
   async function describeView(question) {
     if (!apiKey) { warn('Gemini açarı yoxdur'); return; }
     if (!(await startCamera())) return;
-    var t = await gemini([{ text: 'TASK:DESCRIBE\nYou are the eye of a small robot. ' + (question ? 'The user asked: "' + question + '". Answer it.' : 'Say what you see in front of you.') +
-      ' Look at the whole scene, notice the context (what people are doing, what is on the table, mood, mess, anything interesting) and react like a thoughtful friend, offering help if it fits. Reply in Azerbaijani, at most 2 short sentences, plain text, no markdown, no emoji.' }, { text: 'Frame:' }, imgPart(grabFrame())], { maxTokens: 300 });
+    var t = await gemini([{ text: 'TASK:DESCRIBE\nYou are the eye of a small robot. ' + (question ? 'The user asked: "' + question + '". Answer it directly and briefly. ' : '') +
+      'If the question is general (what do you see, who or what is it, what is in front of you) or empty: LIST what is in front of the robot, giving the count first and naming every main thing or person in 1-3 words, for example "Qarşımda 3 şey görürəm: fincan, masa, qənd qabı." No stories, no advice, no comments. Reply in Azerbaijani, at most 25 words, plain text, no markdown, no emoji.' }, { text: 'Frame:' }, imgPart(grabFrame(480, 0.6))], { maxTokens: 120, nosys: true, fast: true, timeout: 12000 });   // sürətli: düşünmə söndürülüb, kiçik kadr
     await speak(t || 'Heç nə görə bilmədim.');
   }
 
@@ -2614,6 +2614,7 @@
       '"geriyə dön" / "arxaya dön" / "tərsinə dön" = turn around: drive R, amount 180, unit deg. If no size is given leave amount and unit null. ' +
       'Set "continuous": true ONLY if the user explicitly asks for non-stop movement ("dayanmadan irəli get", "fasiləsiz"), otherwise false.\n' +
       '- "scan": the answer needs the robot to look in ALL directions of the room by turning in place (90 degrees at a time): counting people or things in the room ("otaqda neçə nəfər var?", "neçə adam var?", "ətrafda neçə nəfər var?", "otaqda kimlər var?"), or describing everything around it ("otaqda nə görürsən?", "ətrafı gözdən keçir", "otağı yoxla"). Put what to find out in "question" (English, e.g. "count the people in the room"). Do NOT use scan for one look straight ahead ("nə görürsən?" with no mention of the room or surroundings, "stolun üstündə nə var?" -> look), and do NOT use it when the user wants the robot to GO somewhere or find and approach something (that is agent).\n' +
+      '- "approach": the user only asks the robot to go near / up to / next to ONE thing or person that may be right in front of it or somewhere in the room ("fincana yaxınlaş", "qarşındakı çaşqaya yaxınlaş", "topun yanına get", "masaya yaxınlaş", "stəkana çat", "yanıma gəl"). It takes priority over "agent" for such requests. Put the thing in "target_en" (short English noun phrase such as "the cup"; for "yanıma gəl" use "the person who is speaking") and in "target" (the user\'s own words). Do NOT use it for passing through a door, going around something, or several different actions (those are "agent").\n' +
       '- "agent": ANY request that needs a PLAN of several actions or camera analysis, i.e. everything that is not one single simple movement, a stop, a plain question or a long story. This includes finding or going to a door, an object, an animal or a person, reading a screen or text, counting or recognizing what is in front of the camera. Examples: "1 metr irəli get, sağa dön, 40 santim irəli get, sola dön, dayan"; "qapını tap və yaxınlaş"; "ekrandakı yazını oxu"; "qapıya get və otaqda kim olduğunu de"; "bir az irəli get və nə gördüyünü söylə". Two modes. (A) The user gives an EXPLICIT sequence of movements/actions: put the ordered plan in "steps" and set "goal" null. (B) The task depends on what the camera sees or on the surroundings (find or go to something, "qapının yanına gəl", look for something or someone, "stolun üstündə nə var?", "avtomobilin önünə çıx", leave the room / go out through the door, explore, indoors or outdoors): set "steps" null and put the user\'s whole request, restated clearly in English, in "goal"; the robot then looks through its camera and decides step by step until the goal is done. Mode A: put an ORDERED plan (max 12 steps, keep the user\'s order) in "steps", each step an object: {"op":"move","drive":"F|B","amount":number|null,"unit":"cm|m|sec"} | {"op":"turn","drive":"L|R","amount":degrees|null} (default 90) | {"op":"look","question":"what to find out with the camera, e.g. count the people"} (the robot looks through its camera and tells the answer aloud) | {"op":"say","text":"one short Azerbaijani sentence"} | {"op":"wait","sec":number} | {"op":"stop"}. The robot has NO arms: it can only move, turn, look and speak. If the user asks for something physically impossible (carry, hand over, pick up), use intent "ask" and explain briefly. For ONE simple movement use intent "drive" instead.\n' +
       '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + (robotName || 'robot') + '", "' + (robotName || 'robot') + ' bura gəl").\n' +
       '- "look": the user asks what the robot sees in general / to look around / asks something else about the view ("nə görürsən?", "ətrafa bax"). Put the question in "question" or null.\n' +
@@ -2824,6 +2825,7 @@
         setMissionLine('▶ Addım ' + (i + 1) + '/' + steps.length + ': ' + agentLabel(st));
         if (op === 'move' || op === 'turn') await agentDrive(st);
         else if (op === 'look') await describeView(String(st.question || ''));
+        else if (op === 'find') { var fm = await approachCore(String(st.target_en || st.target || ''), String(st.target || '')); if (fm) await speak(fm, 'chat'); }
         else if (op === 'say') { if (st.text) await speak(String(st.text).slice(0, 300), 'chat'); }
         else if (op === 'wait') await wait(Math.max(0, Math.min(15, parseFloat(st.sec) || 1)) * 1000);
         else if (op === 'stop') break;
@@ -2885,6 +2887,53 @@
       else if (!finished) await speak('Tapşırığı tam bitirə bilmədim, amma əlimdən gələni etdim.');
     });
   }
+  // ---------- HƏDƏFƏ YAXINLAŞ: əvvəl QARŞIYA baxır (fırlanmır). Görürsə birbaşa yaxınlaşır, görmürsə sağa dönüb axtarır ----------
+  // Gemini yalnız KAMERADA NƏ GÖRDÜYÜNÜ deyir (görünür? harada? neçə sm?), hərəkət qərarını kod verir.
+  async function approachCore(targetEn, targetRaw) {
+    var tgt = String(targetEn || targetRaw || '').trim(); if (!tgt) return 'Nəyə yaxınlaşım? Bir də deyin.';
+    var person = /\b(person|people|man|woman|child|boy|girl|human|speaker|user)\b/i.test(tgt), STOP = person ? 70 : 20;   // sm: əşyaya 20 sm, insana 70 sm qalana qədər
+    var scans = 0, seen = false, lost = 0, lastDist = null, label = '', arrived = false, blocked = false;
+    for (var it = 0; it < 24; it++) {
+      chk();
+      setMissionLine('▶ Yaxınlaşıram: ' + tgt.slice(0, 30) + ' (' + (it + 1) + ')');
+      var r = await visionJSON('TASK:APPROACH_LOOK\nA small robot must go close to: "' + tgt + '" (the user may name it differently, any matching thing counts; if several match choose the one closest to the center). Look ONLY at the current camera frame. Reply ONLY JSON: {"visible":true|false,"x":number from 0 to 1 = horizontal center of the target in the frame (0 left edge, 0.5 middle, 1 right edge),"distance_cm":estimated distance from the camera to the target in cm,"name":"what it is, 1-3 words, Azerbaijani","blocked":true|false (true only if ANOTHER thing, such as a wall, furniture or a person, is closer than 30 cm straight ahead on the floor)}');
+      var vis = (r.visible === true || r.visible === 'true');
+      if (!vis) {
+        if (seen) {                                                              // yaxınlaşarkən kadrdan çıxdı
+          if (lastDist != null && lastDist <= 60) { arrived = true; break; }     // çox yaxındır, kadra sığmır
+          if (++lost > 2) break;
+          await wait(300); continue;
+        }
+        if (scans >= 6) break;                                                   // tam dövrə baxdı, tapmadı
+        await agentDrive({ op: 'turn', drive: 'R', amount: 60, unit: 'deg' }); scans++; await wait(300); continue;   // YALNIZ görünmürsə axtarır, həmişə sağa
+      }
+      seen = true; lost = 0; label = String(r.name || label || '').slice(0, 40);
+      var x = parseFloat(r.x); if (!(x >= 0 && x <= 1)) x = 0.5;
+      var dist = parseFloat(r.distance_cm); if (!(dist > 0)) dist = lastDist || 100; lastDist = dist;
+      var off = x - 0.5;
+      if (Math.abs(off) > 0.12) {                                                // mərkəzdə deyil: yalnız ONA TƏRƏF azca dön
+        await agentDrive({ op: 'turn', drive: off > 0 ? 'R' : 'L', amount: Math.max(5, Math.min(35, Math.round(Math.abs(off) * 60))), unit: 'deg' }); await wait(300); continue;
+      }
+      if (r.blocked === true || r.blocked === 'true') { blocked = true; break; }
+      if (dist <= STOP + 5) { arrived = true; break; }
+      var go = dist - STOP, step = dist > 150 ? 80 : dist > 90 ? 50 : dist > 50 ? 30 : go;   // uzaqda böyük, yaxında kiçik addım
+      step = Math.max(10, Math.min(step, go));
+      await agentDrive({ op: 'move', drive: 'F', amount: step, unit: 'cm' }); lastDist = Math.max(0, dist - step); await wait(250);
+    }
+    chk();
+    if (arrived) return 'Çatdım, qarşımda ' + (label || 'o') + ' var.';
+    if (blocked) return 'Qarşıda maneə var, dayandım.';
+    if (!seen) return (String(targetRaw || '').trim() || 'Axtardığımı') + ' görə bilmədim.';
+    return 'Yaxınlaşarkən gözümdən itdi, dayandım.';
+  }
+  async function runApproach(targetEn, targetRaw) {
+    if (!(await ensureReady(true))) return;
+    await runMission('Yaxınlaşıram: ' + String(targetRaw || targetEn || '').slice(0, 30), async function () {
+      mission.timed = true;
+      var msg = await approachCore(targetEn, targetRaw);
+      if (msg) { chatLine('bot', msg); remember('Robot', msg); await speak(msg, 'chat'); }
+    });
+  }
   // ---------- ƏTRAFI GÖZDƏN KEÇİR: yerində 4 istiqamətə baxır (hər dəfə 90° dönür), sonda hamısını cəmləyib cavab verir ----------
   async function runScan(question) {
     question = String(question || '').trim() || 'describe what is in the room';
@@ -2923,6 +2972,7 @@
         case 'long': await longReply(c.b64, c.heard); break;
         case 'look': await describeView(r.question || ''); break;
         case 'scan': await runScan(r.question || c.heard); break;
+        case 'approach': await runApproach(r.target_en || r.target || c.heard, r.target || c.heard); break;
         case 'agent': if (Array.isArray(r.steps) && r.steps.length) await runAgent(r.steps); else await runGoal(r.goal || c.heard); break;
         default: break;
       }
