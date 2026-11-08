@@ -2504,7 +2504,7 @@
     return false;
   }
   function phon(s) {
-    return String(s || '').replace(/[qg]/g, 'k').replace(/[cz]/g, 's').replace(/x/g, 'h').replace(/w/g, 'v').replace(/y/g, 'i').replace(/(.)\1+/g, '$1');
+    return String(s || '').replace(/[qg]/g, 'k').replace(/[cz]/g, 's').replace(/x/g, 'h').replace(/w/g, 'v').replace(/y/g, 'i').replace(/o/g, 'u').replace(/m/g, 'n').replace(/(.)\1+/g, '$1');
   }
   function hasWake(text) {
     var rn = norm(robotName || ''), full = norm(text); if (!rn || !full) return false;
@@ -2889,6 +2889,14 @@
   }
   // ---------- HƏDƏFƏ YAXINLAŞ: əvvəl QARŞIYA baxır (fırlanmır). Görürsə birbaşa yaxınlaşır, görmürsə sağa dönüb axtarır ----------
   // Gemini yalnız KAMERADA NƏ GÖRDÜYÜNÜ deyir (görünür? harada? neçə sm?), hərəkət qərarını kod verir.
+  function azGen(w) {                                                              // "fincan" → "fincanın", "masa" → "masanın", "top" → "topun"
+    w = String(w || '').trim().toLocaleLowerCase('az'); if (!w) return w;
+    var m = w.match(/([^\s]+)$/), last = m ? m[1] : w, vs = last.match(/[aıoueəiöü]/g) || [], v = vs.length ? vs[vs.length - 1] : 'a';
+    var suf = /[aıeəiouöü]/.test(w.charAt(w.length - 1)) ? 'n' : '';
+    var h = (v === 'a' || v === 'ı') ? 'ı' : (v === 'e' || v === 'ə' || v === 'i') ? 'i' : (v === 'o' || v === 'u') ? 'u' : 'ü';
+    if (vs.length > 1 && /k$/.test(w)) w = w.slice(0, -1) + 'y'; else if (vs.length > 1 && /q$/.test(w)) w = w.slice(0, -1) + 'ğ';
+    return w + suf + h + 'n';
+  }
   async function approachCore(targetEn, targetRaw) {
     var tgt = String(targetEn || targetRaw || '').trim(); if (!tgt) return 'Nəyə yaxınlaşım? Bir də deyin.';
     var person = /\b(person|people|man|woman|child|boy|girl|human|speaker|user)\b/i.test(tgt), STOP = person ? 70 : 20;   // sm: əşyaya 20 sm, insana 70 sm qalana qədər
@@ -2911,8 +2919,8 @@
       var x = parseFloat(r.x); if (!(x >= 0 && x <= 1)) x = 0.5;
       var dist = parseFloat(r.distance_cm); if (!(dist > 0)) dist = lastDist || 100; lastDist = dist;
       var off = x - 0.5;
-      if (Math.abs(off) > 0.12) {                                                // mərkəzdə deyil: yalnız ONA TƏRƏF azca dön
-        await agentDrive({ op: 'turn', drive: off > 0 ? 'R' : 'L', amount: Math.max(5, Math.min(35, Math.round(Math.abs(off) * 60))), unit: 'deg' }); await wait(300); continue;
+      if (Math.abs(off) > 0.06) {                                                // mərkəzdə deyil: yalnız ONA TƏRƏF azca dön
+        await agentDrive({ op: 'turn', drive: off > 0 ? 'R' : 'L', amount: Math.max(3, Math.min(35, Math.round(Math.abs(off) * 60))), unit: 'deg' }); await wait(300); continue;
       }
       if (r.blocked === true || r.blocked === 'true') { blocked = true; break; }
       if (dist <= STOP + 5) { arrived = true; break; }
@@ -2921,7 +2929,7 @@
       await agentDrive({ op: 'move', drive: 'F', amount: step, unit: 'cm' }); lastDist = Math.max(0, dist - step); await wait(250);
     }
     chk();
-    if (arrived) return 'Çatdım, qarşımda ' + (label || 'o') + ' var.';
+    if (arrived) return label ? azGen(label) + ' yanına çatdım.' : 'Çatdım.';
     if (blocked) return 'Qarşıda maneə var, dayandım.';
     if (!seen) return (String(targetRaw || '').trim() || 'Axtardığımı') + ' görə bilmədim.';
     return 'Yaxınlaşarkən gözümdən itdi, dayandım.';
