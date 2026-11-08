@@ -2847,8 +2847,9 @@
           'Robot state: turned in total ' + Math.round(heading) + ' degrees since the start (right = positive); drove forward about ' + Math.round(fwd) + ' cm in total; step ' + (it + 1) + ' of ' + MAXIT + '.\n' +
           'Your notes so far: ' + (notes || 'none') + '\nRecent actions: ' + (hist.slice(-6).join(' | ') || 'none') + '\n' +
           'Rules:\n' +
+          '- EVERY STEP, FIRST decide whether the target is visible in THIS frame (even if small, far or partly visible) and put it into "target_visible" (true/false) and "target_position" ("left" = left third of the frame, "center" = middle third, "right" = right third, "none"). If target_visible is true you must NOT scan and must NOT turn away from it: position "center" = drive toward it right now; "left" = turn LEFT 10-25 degrees; "right" = turn RIGHT 10-25 degrees; then drive. Never start with a turn when the target is already in front of you.\n' +
           '- First work out what the goal needs (find something, go near it, count, read, look at it, approach an object from a side, go through a doorway, leave the room, explore, outdoors or indoors, etc.).\n' +
-          '- If the target is not visible, scan by turning 45-60 degrees at a time (a full 360 scan = 6-8 turns). Write what you saw into "notes" (for example people seen and the heading where you saw them) so you never count the same thing twice. After a full scan without finding it, move 60-80 cm toward open space and scan again.\n' +
+          '- If the target is not visible, scan by turning RIGHT 45-60 degrees at a time, always in the same direction and never back and forth (a full 360 scan = 6-8 turns). Write what you saw into "notes" (for example people seen and the heading where you saw them) so you never count the same thing twice. After a full scan without finding it, move 60-80 cm toward open space and scan again.\n' +
           '- If the target is visible but not centered, TURN toward it first (it is in the left third: turn left 15-30 degrees; right third: turn right 15-30). Move forward only when it is roughly centered.\n' +
           '- Move in small safe steps: up to 80 cm when the way is clear and the target is far; 20-40 cm when it is near. NEVER drive forward if a wall, furniture, a person, a car or any obstacle fills the lower part of the frame or looks closer than about 40 cm: turn to a free direction instead. The robot has no other obstacle sensor.\n' +
           '- "Come to me" / "yanıma gəl" / "bura gəl" / "məni tap": the target is the PERSON who gave the command (the closest person you can see). Scan for a person, turn until they are centered, then drive toward them in small steps, checking the frame each time. Stop when they fill a large part of the frame (about 60-80 cm away) and finish with one short friendly sentence. Never touch or push anyone. If no person is found after a full scan, finish and say so.\n' +
@@ -2858,13 +2859,19 @@
           '- For counting or describing, look from enough directions first, then answer from your notes.\n' +
           '- If the goal is impossible for a robot without arms (pick up, carry, open a closed door) or unsafe, finish and explain briefly.\n' +
           '- Finish (done true) as soon as the goal is achieved or clearly impossible. final_say = what to tell the user: Azerbaijani, 1-2 short plain sentences, no markdown (for a question, the answer).\n' +
-          'Reply ONLY JSON: {"observation":"what you see, short","reasoning":"short","notes":"updated notes (keep important facts)","action":{"op":"move|turn|wait","drive":"F|B|L|R","amount":number,"unit":"cm|deg"},"done":false,"final_say":null}';
+          'Reply ONLY JSON: {"observation":"what you see, short","target_visible":true|false,"target_position":"left|center|right|none","reasoning":"short","notes":"updated notes (keep important facts)","action":{"op":"move|turn|wait","drive":"F|B|L|R","amount":number,"unit":"cm|deg"},"done":false,"final_say":null}';
         var r = await visionJSON(prompt);
         if (!r || (!r.action && r.done !== true)) { if (++bad >= 3) throw new Error('Gemini cavabı başa düşülmədi, dayandım'); continue; }
         bad = 0; if (typeof r.notes === 'string') notes = r.notes.slice(0, 600);
         if (r.observation) setMissionLine('▶ ' + mission.title + ' — ' + String(r.observation).slice(0, 70));
         if (r.done === true || r.done === 'true') { finalSay = r.final_say; finished = true; break; }
         var a = r.action || {}, op = String(a.op || '').toLowerCase(), d = String(a.drive || '').toUpperCase(), amt = parseFloat(a.amount);
+        var tv = (r.target_visible === true || r.target_visible === 'true'), tp = String(r.target_position || '').toLowerCase();
+        if (tv && op === 'turn') {                                                  // hədəf görünür: mərkəzdədirsə dönmə, düz get; kənardadırsa yalnız ONA TƏRƏF dön
+          if (tp === 'center') { op = 'move'; d = 'F'; amt = 30; }
+          else if (tp === 'left' && d !== 'L') d = 'L';
+          else if (tp === 'right' && d !== 'R') d = 'R';
+        }
         if (op === 'turn') {
           if (d !== 'L' && d !== 'R') d = 'R'; amt = Math.max(5, Math.min(180, amt > 0 ? amt : 45));
           await agentDrive({ op: 'turn', drive: d, amount: amt, unit: 'deg' }); heading += d === 'R' ? amt : -amt; hist.push('turn ' + d + ' ' + Math.round(amt) + 'deg');
