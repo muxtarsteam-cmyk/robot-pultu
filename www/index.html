@@ -2257,7 +2257,8 @@
     deg = Math.max(1, Math.min(360, +deg || 90));
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var cmd = slowCmd(dir), maxMs = Math.max(8000, deg * 200 + 5000);
-    var small = deg <= 40, pct = small ? Math.max(12, Math.round(turnPct * (fixDepth ? 0.8 : 0.5))) : turnPct, errAfter = null, pctCap = small ? 100 : Math.min(100, turnPct + 25), lastEsc = 0;   // kiçik bucaq: normal sürətin 50%-i ilə başla; tərpənmirsə pillə-pillə artır
+    var small = deg <= 40, pct = small ? 50 : 100, errAfter = null, pctCap = 100, lastEsc = 0;   // >40° (sağa/sola/geriyə dön, 45°...): 100% sürət. 1°–40°: 50%-dən başla, tərpənməsə 1%-1% qaldır (100%-ə qədər, əl çəkmədən)
+    if (small) maxMs = 60000;
     var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, cumO: 0, cumR: 0, rateOk: (Date.now() - gy.rateAt) < 500, rateChecked: false,
       mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis, startAlpha: gy.alpha, startHeading: (axis === 'y' ? hy : hz).h,
       lead: 0, hist: [], done: false, escalated: false, progAt: Date.now() + (small ? 200 : 800) };
@@ -2265,7 +2266,7 @@
     var t0 = Date.now(), lastSend = 0;
     try {
       try {
-        send(small ? 'P' + pctToPwm(pct) + '\n' : pctCmd());
+        send('P' + pctToPwm(pct) + '\n');
         send(cmd); lastSend = Date.now(); if (!small) setTimeout(function () { if (!cur.done) send('K'); }, 60);          // yerindən götürmək üçün qısa başlanğıc impulsu (kiçik bucaqda YOX: tam gücdə təpik bucağı aşırdı)
         while (!cur.done) {
           chk();
@@ -2273,20 +2274,20 @@
           if (now - t0 > maxMs) throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı');
           if (gyAge() > 1500 && now - t0 > 2500) throw new Error('Giroskopdan məlumat gəlmir, robot dayandırıldı');
           if (cur.cum <= -8 && now - t0 > 400) throw new Error('Robot əks tərəfə dönür. Ayarlarda «Dönmə istiqaməti tərsdir» xanasını dəyişin');
-          if (now - cur.progAt > 1500 && (!small || (pct >= pctCap && now - cur.progAt > 3000))) throw new Error('Robot dönmür. Dönmə sürəti şkalasını artırın');     // kiçik bucaqda 100% gücə çatana və 3 san tərpənməyənə qədər dayanmır
+          if (!small && now - cur.progAt > 1500) throw new Error('Robot dönmür. Dönmə sürəti şkalasını artırın');                    // kiçik bucaqda bu xəta YOXDUR: sürəti artırmağa davam edir (yalnız 60 san limiti və Stop düyməsi)
           if (small && !cur.done && now - cur.progAt > 300 && now - lastEsc >= 80 && pct < pctCap) {            // 300 ms-də 0,4° tərpənməyibsə (ağırdır): sürəti 1% artır (hər 80 ms), tərpənənə qədər
-            pct = Math.min(pctCap, pct + (now - cur.progAt > 1500 ? 4 : now - cur.progAt > 800 ? 2 : 1)); lastEsc = now; send('P' + pctToPwm(pct) + '\n');   // uzun müddət tərpənmirsə (təkər boşda fırlanır) artım sürətlənir: 1% → 2% → 4%
+            pct = Math.min(pctCap, pct + 1); lastEsc = now; send('P' + pctToPwm(pct) + '\n');
           }
           if (now - lastSend >= 120) { send(cmd); lastSend = now; }                                           // Arduino qoruması: eyni əmrin saxlanması
           await sleep(15);
         }
-      } finally { stopBurst(); if (small) { try { send(pctCmd()); } catch (e) {} } }                         // sonrakı dönmələr üçün normal sürəti qaytar
+      } finally { stopBurst(); try { send(pctCmd()); } catch (e) {} }                                       // sonrakı əmrlər üçün ayardakı normal sürəti qaytar
       await wait(450);                                                                                         // robot dayansın, son bucağı oxu
       gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '°';
       note('Dönmə: hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '°' + (small ? ' (yavaş rejim, son sürət ' + pct + '%)' : ''));
       if (small) errAfter = deg - cur.cum;                                                                     // + = az dönüb, − = aşıb
     } finally { gt = null; renderGyro(true); }
-    if (small && fixDepth < 2 && errAfter != null && Math.abs(errAfter) >= 1 && Math.abs(errAfter) <= 15) {   // dəqiqləşdirmə: 5° dönüb 4° lazımdırsa, daha yavaş sürətlə 1° geri; az dönübsə qalanını irəli
+    if (small && fixDepth < 60 && errAfter != null && Math.abs(errAfter) >= 1 && Math.abs(errAfter) <= 40) {   // hədəfi tutana qədər sağa-sola dəqiqləşdirir (maks 60 dəfə)   // dəqiqləşdirmə: 5° dönüb 4° lazımdırsa, daha yavaş sürətlə 1° geri; az dönübsə qalanını irəli
       chk(); note('Dəqiqləşdirirəm: ' + f1(errAfter) + '° ' + (errAfter > 0 ? 'çatmır' : 'artıqdır'));
       try { await gyroTurn(errAfter > 0 ? dir : (dir === 'R' ? 'L' : 'R'), Math.abs(errAfter), fixDepth + 1); }
       catch (e) { if (e && /dönmür|vaxtı bitdi|əks tərəfə/.test(String(e.message))) note('Dəqiqləşdirmə alınmadı, əsas dönmə qalır: ' + e.message); else throw e; }   // dəqiqləşdirmə uğursuz olsa əmri xətaya salmır
