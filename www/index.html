@@ -84,19 +84,19 @@
   .cal .h { font-size:10px; color:var(--muted); }
   .cal .o { color:transparent; }
   .cal .t { background:var(--accent); color:#fff; font-weight:700; }
-  .gy { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin-top:8px; font-size:12px; color:var(--muted); }
+  .gy { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:10px; font-size:15px; color:var(--muted); }
   .gy div { background:#0f172a; border-radius:8px; padding:5px 6px; text-align:center; }
   .gy b { display:block; color:var(--text); font-size:15px; font-variant-numeric:tabular-nums; }
   .gtop { display:flex; gap:10px; align-items:center; margin-top:8px; }
-  .gdial { flex:0 0 64px; height:64px; border-radius:50%; border:2px solid #475569; position:relative; background:#0f172a; }
-  .gdial i { position:absolute; left:calc(50% - 2px); top:5px; width:4px; height:27px; background:var(--accent); border-radius:2px; transform-origin:50% 100%; }
-  .gdial u { position:absolute; left:calc(50% - 3px); top:-1px; width:6px; height:6px; border-radius:50%; background:var(--ok); }
-  .gdial s { position:absolute; left:calc(50% - 1px); top:1px; width:2px; height:31px; background:#f59e0b; transform-origin:50% 100%; display:none; text-decoration:none; }
-  .gdial s::before { content:''; position:absolute; top:-3px; left:-3px; width:8px; height:8px; border-radius:50%; background:#f59e0b; }
-  .gdial b { position:absolute; left:calc(50% - 1px); top:5px; width:2px; height:27px; background:var(--ok); transform-origin:50% 100%; display:none; }
-  .gprog { height:8px; border-radius:4px; background:#334155; margin-top:8px; overflow:hidden; }
+  .gdial { flex:0 0 150px; height:150px; border-radius:50%; border:2px solid #475569; position:relative; background:#0f172a; }
+  .gdial i { position:absolute; left:calc(50% - 3px); top:10px; width:6px; height:65px; background:var(--accent); border-radius:2px; transform-origin:50% 100%; }
+  .gdial u { position:absolute; left:calc(50% - 6px); top:-2px; width:12px; height:12px; border-radius:50%; background:var(--ok); }
+  .gdial s { position:absolute; left:calc(50% - 2px); top:2px; width:4px; height:73px; background:#f59e0b; transform-origin:50% 100%; display:none; text-decoration:none; }
+  .gdial s::before { content:''; position:absolute; top:-6px; left:-5px; width:14px; height:14px; border-radius:50%; background:#f59e0b; }
+  .gdial b { position:absolute; left:calc(50% - 2px); top:10px; width:4px; height:65px; background:var(--ok); transform-origin:50% 100%; display:none; }
+  .gprog { height:14px; border-radius:7px; background:#334155; margin-top:8px; overflow:hidden; }
   .gprog i { display:block; height:100%; width:0%; background:var(--ok); transition:width .08s linear; }
-  .gtxt { flex:1; font-size:12px; color:var(--muted); line-height:1.5; }
+  .gtxt { flex:1; font-size:17px; color:var(--muted); line-height:1.5; }
   .gtxt b { color:var(--text); }
   #picker { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:20px; }
   #picker .box { background:var(--card); border-radius:14px; padding:14px; width:100%; max-width:420px; max-height:80%; overflow:auto; }
@@ -2251,8 +2251,8 @@
   // "sağa dön" = 90°. Əmr bir dəfə verilir, robot giroskopla hədəf bucağa çatana qədər dönür, hədəfə çatanda DAYANIR.
   // Dayanma anı bucaq sürətinə görə əvvəlcədən hesablanır (əyləc gecikməsi). Geri düzəliş, təkrar cəhd, öyrənmə və avtomatik sürət dəyişmə YOXDUR.
   var TURN_LAT = 0.13;                                                                       // əmrin robota çatma + motorun dayanma gecikməsi (san)
-  async function gyroTurn(dir, deg, fixDepth) {
-    fixDepth = fixDepth || 0;
+  async function gyroTurn(dir, deg, fixDepth, osh) {
+    fixDepth = fixDepth || 0; osh = osh || 0;
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir, robot dönməz. Şkalanı artırın');
     deg = Math.max(1, Math.min(360, +deg || 90));
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
@@ -2287,9 +2287,12 @@
       note('Dönmə: hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '°' + (small ? ' (yavaş rejim, son sürət ' + pct + '%)' : ''));
       if (small) errAfter = deg - cur.cum;                                                                     // + = az dönüb, − = aşıb
     } finally { gt = null; renderGyro(true); }
-    if (small && fixDepth < 60 && errAfter != null && Math.abs(errAfter) >= 1 && Math.abs(errAfter) <= 40) {   // hədəfi tutana qədər sağa-sola dəqiqləşdirir (maks 60 dəfə)   // dəqiqləşdirmə: 5° dönüb 4° lazımdırsa, daha yavaş sürətlə 1° geri; az dönübsə qalanını irəli
+    var tol = Math.max(1.5, deg * 0.1);                                                                       // buraxılan xəta: 5° üçün ±1,5°, 20° üçün ±2°, 40° üçün ±4° (giroskop səs-küyündən kiçik düzəlişlər robotu sağa-sola əsdirirdi)
+    if (small && fixDepth < 8 && errAfter != null && Math.abs(errAfter) >= tol && Math.abs(errAfter) <= 40) {   // dəqiqləşdirmə: aşıbsa əks tərəfə, çatmayıbsa irəli
+      var nOs = osh + (errAfter < 0 ? 1 : 0);                                                                  // aşma sayı: iki dəfə aşıbsa sağa-sola əsmə başlayır, dayan
+      if (nOs >= 2) { note('Dəqiqləşdirmə dayandı (sağa-sola əsmə), qalan fərq ' + f1(errAfter) + '°'); return; }
       chk(); note('Dəqiqləşdirirəm: ' + f1(errAfter) + '° ' + (errAfter > 0 ? 'çatmır' : 'artıqdır'));
-      try { await gyroTurn(errAfter > 0 ? dir : (dir === 'R' ? 'L' : 'R'), Math.abs(errAfter), fixDepth + 1); }
+      try { await gyroTurn(errAfter > 0 ? dir : (dir === 'R' ? 'L' : 'R'), Math.abs(errAfter), fixDepth + 1, nOs); }
       catch (e) { if (e && /dönmür|vaxtı bitdi|əks tərəfə/.test(String(e.message))) note('Dəqiqləşdirmə alınmadı, əsas dönmə qalır: ' + e.message); else throw e; }   // dəqiqləşdirmə uğursuz olsa əmri xətaya salmır
     }
   }
