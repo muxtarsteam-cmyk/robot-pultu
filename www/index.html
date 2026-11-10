@@ -2497,10 +2497,10 @@
       }
       if (deg > 5) await dense(deg - 5);
       // 2) İNCƏ MƏRHƏLƏ: hər addımda BİR kiçik impuls, giroskop tam oturandan sonra ölç, hədəfi keçibsə əks impuls
-      while (steps < 30) {
+      while (steps < 80) {
         chk();
         if (kicks >= maxK) { note('Təpik tavanı (' + maxK + ') dolub, dayandım. Ölçmə: sürət ' + f1(cur.cumR) + '° / kompas ' + f1(cur.cumO) + '°'); break; }
-        if (Date.now() - t0 > 40000) throw new Error('Dönmə vaxtı bitdi (' + f1(gAng(cur)) + '° / ' + deg + '°), robot dayandırıldı');
+        // vaxt limiti YOXDUR: hədəf bucağa çatana qədər davam edir (yalnız Stop düyməsi/səs «dayan» və təpik tavanı dayandırır)
         if (gyAge() > 1500 && Date.now() - t0 > 2500) throw new Error('Giroskopdan məlumat gəlmir, robot dayandırıldı');
         var err = deg - gAng(cur), ae = Math.abs(err);
         if (err > 7 && deg > 5 && denseN < 80) { steps++; await dense(deg - 5); continue; }                    // hələ çox geridədirsə yenə sıx impulslar
@@ -3309,7 +3309,7 @@
     var tgt = String(targetEn || targetRaw || '').trim(); if (!tgt) return 'Nəyə yaxınlaşım? Bir də deyin.';
     var person = /\b(person|people|man|woman|child|boy|girl|human|speaker|user)\b/i.test(tgt), STOP = person ? 70 : 20;   // sm: əşyaya 20 sm, insana 70 sm qalana qədər
     var scans = 0, seen = false, lost = 0, lastDist = null, label = '', arrived = false, blocked = false, turnSign = (sget('appr_sign', '-1') === '1' ? 1 : -1), prevDeg = null, lastCmd = 0, noProg = 0, worse = 0;
-    for (var it = 0; it < 14; it++) {                                           // az şəkil: Gemini limitini doldurmasın
+    for (var it = 0; it < 22; it++) {                                           // az şəkil: Gemini limitini doldurmasın
       chk();
       setMissionLine('▶ Yaxınlaşıram: ' + tgt.slice(0, 30) + ' (' + (it + 1) + ')');
       var r = await visionJSON('TASK:APPROACH_LOOK\nA small robot must go close to: "' + tgt + '" (the user may name it differently, any matching thing counts; if several match choose the one closest to the center). Look ONLY at the current camera frame. Reply ONLY JSON: {"visible":true|false,"x":number from 0 to 1 = horizontal center of the target in the frame (0 left edge, 0.5 middle, 1 right edge),"y":vertical center of the target in the frame (0 top edge, 0.5 middle, 1 bottom edge),"left":left edge,"right":right edge,"top":top edge,"bottom":bottom edge of the target bounding box (each 0..1 of the frame; 0 = left/top edge of the frame, 1 = right/bottom edge),"distance_cm":estimated distance from the camera to the target in cm,"name":"what it is, 1-3 words, Azerbaijani","blocked":true|false (true only if ANOTHER thing, such as a wall, furniture or a person, is closer than 30 cm straight ahead on the floor)}');
@@ -3341,6 +3341,7 @@
         chatLine('sys', (label || tgt).slice(0, 20) + ': ' + (deg > 0 ? '+' : '') + deg.toFixed(1) + '° → ' + amt + '° ' + (dirR ? 'sağa' : 'sola') + ' dönürəm');
         prevDeg = deg; lastCmd = (deg > 0 ? 1 : -1) * amt;
         await agentDrive({ op: 'turn', drive: dirR ? 'R' : 'L', amount: amt, unit: 'deg' }); await wait(400);
+        continue;                                                                                          // dönəndən sonra YENİDƏN BAX: hədəf yaşıl (0°) xəttə düşməyibsə yenə dön, düşəndən sonra irəli get
       } else { prevDeg = null; lastCmd = 0; noProg = 0; if (r.blocked === true || r.blocked === 'true') { blocked = true; break; } }
       var go = dist - STOP, lastLeg = go <= 100, step = lastLeg ? go : Math.min(200, go / 2);                  // 2) məsafənin YARISI qədər get (ən çox 2 m), dayan, şəkil çək; qalan ≤100 sm olanda dayanma nöqtəsinə qədər get və dayan
       step = Math.max(10, Math.round(step));
@@ -3352,7 +3353,7 @@
     chk();
     if (arrived) return label ? azGen(label) + ' yanındayam.' : 'Çatdım.';
     if (blocked) return 'Qarşıda maneə var, dayandım.';
-    if (!seen) return (String(targetRaw || '').trim() || 'Axtardığımı') + ' görə bilmədim.';
+    if (!seen) return 'Otaqda ' + (String(targetRaw || '').trim() || 'axtardığınızı') + ' yoxdur: 360° dövrə vurub baxdım, heç bir kadrda görmədim.';
     return 'Yaxınlaşarkən gözümdən itdi, dayandım.';
   }
   async function runApproach(targetEn, targetRaw) {
