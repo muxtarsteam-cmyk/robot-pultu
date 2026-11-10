@@ -383,6 +383,15 @@
 // ║    3805  ƏMR TANIMA · əsas hərəkət əmrləri: sağ, sol, irəli, geri (BM_ALIAS)
 // ║    3869  ƏMR TANIMA · sadə əmr tanıma (localSimpleCommand)
 // ╚══════════════════════════════════════════════════════════════════
+
+
+
+
+// #region ⚪ QIFILLANMIŞ KOD 01 · fs, rotEl, SRC, isOpen
+// ╔══════════════════════════════════════════════════════════════════
+// ║ ⚪ QIFILLANMIŞ KOD 01 · fs, rotEl, SRC, isOpen
+// ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+// ╟──────────────────────────────────────────────────────────────────
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var fs = $('rbFS'); if (!fs) return;
@@ -681,8 +690,23 @@
     }
   };
 })();
+// ╚══ ⚪ QIFILLANMIŞ KOD 01 SONU ══ 🔒 SON [Qıfıllanmış kod]
+// #endregion
+
+
+
+
 </script>
 <script>
+
+
+
+
+// #region ⚪ QIFILLANMIŞ KOD 02 · SPP, dot, lastCmd, keyInput
+// ╔══════════════════════════════════════════════════════════════════
+// ║ ⚪ QIFILLANMIŞ KOD 02 · SPP, dot, lastCmd, keyInput
+// ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+// ╟──────────────────────────────────────────────────────────────────
 (function () {
   var SPP = '00001101-0000-1000-8000-00805F9B34FB';
   var $ = function (id) { return document.getElementById(id); };
@@ -818,6 +842,12 @@
     $('pickCancel').onclick = function () { $('picker').style.display = 'none'; note(''); };
     $('picker').style.display = 'flex';
   }
+// ╚══ ⚪ QIFILLANMIŞ KOD 02 SONU ══ 🔒 SON [Qıfıllanmış kod]
+// #endregion
+
+
+
+
 
 
 
@@ -894,6 +924,15 @@
   // ╚══ 🔴 BLUETOOTH SONU ══ 🔒 SON [Bluetooth səs idarəsi]
   // #endregion
   // Əlaqə kəsiləndə (və ya kəsilməzdən əvvəl) connected bayrağından asılı olmadan Arduino-ya birbaşa 'S' göndərir
+
+
+
+
+  // #region 🔴 QIFILLANMIŞ KOD 03 · rawStop
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔴 QIFILLANMIŞ KOD 03 · rawStop
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function rawStop() {
     try {
       if (!BT || !devAddr) return;
@@ -904,6 +943,12 @@
   // Heartbeat: qoşulu olduqca hər 300 ms 'H' göndərilir. Arduino 1 san 'H' (və ya başqa bayt) almasa əlaqəni kəsilmiş sayıb motorları dayandırır.
   setInterval(function () { if (connected && BT && devAddr) { try { BT.write(devAddr, SPP, 'H', function () {}, function () {}); } catch (e) {} } }, 300);
   window.addEventListener('pagehide', rawStop);
+  // ╚══ 🔴 QIFILLANMIŞ KOD 03 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -927,6 +972,15 @@
   }
   // ╚══ 🔴 BLUETOOTH SONU ══ 🔒 SON [Bluetooth səs idarəsi]
   // #endregion
+
+
+
+
+  // #region 🔴 QIFILLANMIŞ KOD 04 · pivotMode, modeSentFor, modeCmd, showMode
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔴 QIFILLANMIŞ KOD 04 · pivotMode, modeSentFor, modeCmd, showMode
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   connBtn.addEventListener('click', function () { connected ? disconnect() : connect(); });
 
   // ---------- Dönmə rejimi: N = Spin (4 təkər), O = Pivot (tək tərəf işləyir) ----------
@@ -944,6 +998,12 @@
     if (connected && BT) { modeSentFor = pivotMode; modeSentAt = Date.now(); BT.write(devAddr, SPP, modeCmd(), function () {}, function () {}); }
   }
   var TURN_CMDS = 'LRQE', MOVE_CMDS = 'FBLRQE', armSentAt = 0;
+  // ╚══ 🔴 QIFILLANMIŞ KOD 04 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -1030,10 +1090,25 @@
   // ---------- DÜZ GETMƏ: irəli/geri zamanı giroskopla istiqaməti saxla ----------
   // Başlanğıcda robotun baxdığı bucaq yadda saxlanır. Robot sağa/sola sapanda JS 60 ms-dən bir Arduino-ya 'T<0-200>\n' (trim = dəyər-100, %) göndərir:
   // + = sağa (saat əqrəbi) düzəliş, - = sola. Arduino lazım olan tərəfin motorunu yavaşladır. Motorların fərqi (biri güclü, biri zəif) "bias" kimi öyrənilib yadda qalır.
+
+
+
+
+  // #region 🟢 QIFILLANMIŞ KOD 05 · straightOn, strBias, hdgHold, rawW
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟢 QIFILLANMIŞ KOD 05 · straightOn, strBias, hdgHold, rawW
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var straightOn = sget('straight_on', '1') === '1', STR_KP = 6, STR_KI = 2, STR_KD = 0.5;
   var strBias = {}; try { strBias = JSON.parse(sget('str_bias', '{}')) || {}; } catch (e) { strBias = {}; }
   var hdgHold = { mark: null, lastErr: 0, dErr: 0, refErr: 0, refT: 0, on: false, dead: false, dirty: false, cmd: '', target: 0, axis: 'y', bias: 0, sent: null, sentAt: 0, last: 0, t0: 0, lastSend: 0, tmr: null };
   function rawW(t) { try { if (connected && BT && devAddr) BT.write(devAddr, SPP, t, function () {}, function () {}); } catch (e) {} }
+  // ╚══ 🟢 QIFILLANMIŞ KOD 05 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -1072,7 +1147,22 @@
   }
   // ╚══ 🔵 GİROSKOP SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🔵 QIFILLANMIŞ KOD 06 · holdInfo
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔵 QIFILLANMIŞ KOD 06 · holdInfo
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function holdInfo(t) { var e = $('straightInfo'); if (e) e.textContent = t; }
+  // ╚══ 🔵 QIFILLANMIŞ KOD 06 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -1181,6 +1271,15 @@
   }
   // ╚══ 🔵 GİROSKOP SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🔵 QIFILLANMIŞ KOD 07 · c, down, up, isSpeaking
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔵 QIFILLANMIŞ KOD 07 · c, down, up, isSpeaking
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   window.addEventListener('pagehide', function () { clearInterval(hdgHold.tmr); });
 
   // ---------- Düymələr (basılı saxla = hərəkət, burax = dayan) ----------
@@ -1811,6 +1910,12 @@
   async function wait(ms) { var end = Date.now() + ms; while (Date.now() < end) { chk(); await sleep(Math.max(1, Math.min(100, end - Date.now()))); } }
   // Əmri vaxt bitənə qədər 300 ms-dən bir təkrarlayır, sonra DƏRHAL Dayan (S) göndərir (iki dəfə, itkiyə qarşı)
   var KEEP_MS = 300;
+  // ╚══ 🔵 QIFILLANMIŞ KOD 07 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -1878,12 +1983,27 @@
 
 
   // ---------- Giroskop: telefonun DeviceOrientation məlumatı + dəqiq bucaqla dönmə ----------
+
+
+
+
+  // #region 🟢 QIFILLANMIŞ KOD 08 · gy, gt, turnPct, liveAt
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟢 QIFILLANMIŞ KOD 08 · gy, gt, turnPct, liveAt
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var gy = { on: false, alpha: null, beta: null, gamma: null, abs: false, heading: null, curAxis: 'y', lastAt: 0, n: 0, zero: null, rendered: 0, t0: 0, lastRes: '' };
   var gt = null;                                           // aktiv dönmə: {dir, sign, target, cum, ...}
   var turnPct = Math.max(0, Math.min(100, +sget('turn_pct', 45)));    // dönmə sürəti 0-100% (Arduino: P<PWM 0..255>\n)
   var liveAt = {};
   function liveSend(key, fn) { var n = Date.now(); if (connected && BT && n - (liveAt[key] || 0) >= 80) { liveAt[key] = n; send(fn()); } }
   function pctToPwm(pct) { return Math.max(0, Math.min(255, Math.round((pct / 100) * 255))); }   // 0% -> 0, 100% -> 255
+  // ╚══ 🟢 QIFILLANMIŞ KOD 08 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -1972,7 +2092,22 @@
   function pickAxis(hy, hz) { return gyroMode === 'flat' ? 'y' : gyroMode === 'upright' ? 'z' : (hy.mag >= hz.mag ? 'y' : 'z'); }
   // ╚══ 🔵 GİROSKOP SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🔵 QIFILLANMIŞ KOD 09 · f1
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔵 QIFILLANMIŞ KOD 09 · f1
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function f1(x) { return x == null || isNaN(x) ? '—' : (Math.round(x * 10) / 10).toFixed(1); }
+  // ╚══ 🔵 QIFILLANMIŞ KOD 09 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -2016,7 +2151,22 @@
   // #endregion
 
   // ---- DAYAN: S əmri bir dəfə yox, bir neçə dəfə göndərilir (Bluetooth paketi itərsə belə robot dayansın) ----
+
+
+
+
+  // #region 🔵 QIFILLANMIŞ KOD 10 · burstTok
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔵 QIFILLANMIŞ KOD 10 · burstTok
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var burstTok = 0;
+  // ╚══ 🔵 QIFILLANMIŞ KOD 10 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -2196,6 +2346,15 @@
   }
   // ╚══ 🔵 GİROSKOP SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🔵 QIFILLANMIŞ KOD 11 · gyBtn, gyZero, gyMode, straightOn
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔵 QIFILLANMIŞ KOD 11 · gyBtn, gyZero, gyMode, straightOn
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   $('gyBtn').addEventListener('click', gyroStart);
   $('gyZero').addEventListener('click', function () { gy.zero = gy.heading; gy.lastRes = ''; renderGyro(true); });
   $('gyMode').addEventListener('change', function () { gyroMode = this.value; sset('gyro_mode', gyroMode); });
@@ -2206,6 +2365,12 @@
   setInterval(function () { if (gy.on) renderGyro(true); }, 500);
   // Giroskop HƏMİŞƏ işlək olsun: söndüyü/susduğu halda özü yenidən qoşulur
   var gyReAt = 0, needPerm = !!(window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission === 'function');
+  // ╚══ 🔵 QIFILLANMIŞ KOD 11 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -2231,6 +2396,15 @@
   }
   // ╚══ 🔵 GİROSKOP SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🔵 QIFILLANMIŞ KOD 12 · n
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🔵 QIFILLANMIŞ KOD 12 · n
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   setInterval(function () {
     var n = Date.now(); if (n - gyReAt < 2500) return;
     if (!gy.on) { if (!needPerm) { gyReAt = n; gyroStart(); } }
@@ -2240,6 +2414,12 @@
   window.addEventListener('focus', function () { gyroReattach(); });
   ['touchstart', 'click'].forEach(function (ev) { document.addEventListener(ev, function once() { document.removeEventListener(ev, once); if (needPerm && !gy.on) gyroStart(); else gyroReattach(); }, { passive: true }); });
   if (window.DeviceOrientationEvent && typeof window.DeviceOrientationEvent.requestPermission !== 'function') gyroStart();   // Android/APK: icazə lazım deyil, özü başlayır
+  // ╚══ 🔵 QIFILLANMIŞ KOD 12 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
   // Bağlı dövrə (closed-loop) dönmə: startAlpha-dan hədəf bucağa qədər zəif sürətlə dön, hədəfə çatan AN Dayan (S)
 
@@ -2493,6 +2673,15 @@
   }
   // ╚══ 🟢 HƏRƏKƏT SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🟢 QIFILLANMIŞ KOD 13 · abortMission, runMission, ensureReady, norm
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟢 QIFILLANMIŞ KOD 13 · abortMission, runMission, ensureReady, norm
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function abortMission() {
     if (replyWaiter) { clearTimeout(replyWaiter.t); var w = replyWaiter; replyWaiter = null; w.res(''); }
     if (mission) mission.abort = true;
@@ -2555,6 +2744,12 @@
   var voiceOn = false, activeUntil = 0, convo = false, AWAKE_MS = 10000, STOP_NEEDS_NAME = false;
   var acting = false, busy = 0, isListening = false, isProcessing = false;
   var chatLog = [], overheard = [], heardLines = [], lastHeardN = '', lastHeardT = 0;
+  // ╚══ 🟢 QIFILLANMIŞ KOD 13 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -2589,6 +2784,15 @@
   function micOpen() { return voiceOn && !isRateLimited && !isSpeaking && Date.now() >= ttsBusyUntil; }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 14 · micUpdate, goSleep, updateVoiceBtn, cls
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 14 · micUpdate, goSleep, updateVoiceBtn, cls
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function micUpdate() { isProcessing = busy > 0 || acting || !!mission; isListening = micOpen(); }
   function goSleep() { activeUntil = 0; convo = false; try { if (voiceOn && !isSpeaking) updateVoiceBtn('idle'); } catch (e) {} }
   function updateVoiceBtn(state) {
@@ -3104,7 +3308,7 @@
   async function approachCore(targetEn, targetRaw) {
     var tgt = String(targetEn || targetRaw || '').trim(); if (!tgt) return 'Nəyə yaxınlaşım? Bir də deyin.';
     var person = /\b(person|people|man|woman|child|boy|girl|human|speaker|user)\b/i.test(tgt), STOP = person ? 70 : 20;   // sm: əşyaya 20 sm, insana 70 sm qalana qədər
-    var scans = 0, seen = false, lost = 0, lastDist = null, label = '', arrived = false, blocked = false, turnSign = 1, prevDeg = null, lastCmd = 0, noProg = 0, worse = 0;
+    var scans = 0, seen = false, lost = 0, lastDist = null, label = '', arrived = false, blocked = false, turnSign = (sget('appr_sign', '-1') === '1' ? 1 : -1), prevDeg = null, lastCmd = 0, noProg = 0, worse = 0;
     for (var it = 0; it < 14; it++) {                                           // az şəkil: Gemini limitini doldurmasın
       chk();
       setMissionLine('▶ Yaxınlaşıram: ' + tgt.slice(0, 30) + ' (' + (it + 1) + ')');
@@ -3127,7 +3331,7 @@
       var dist = dY > 0 ? dY : parseFloat(r.distance_cm); if (!(dist > 0)) dist = lastDist || 100; lastDist = dist;
       var deg = degFromFrame(x, y0); fsMark = { deg: deg, name: label, cm: dist, yb: ybm }; try { drawBands(); } catch (e) {}
       if (prevDeg != null && lastCmd !== 0) {                                                                 // əvvəlki dönmə + addımdan sonra hədəf 0° xəttinə yaxınlaşmalı idi; əksinədirsə istiqaməti tərsinə çevir
-        if (Math.abs(deg) > Math.abs(prevDeg) + 3) { turnSign = -turnSign; if (++worse >= 3) return 'Dönmə istiqaməti düz çıxmadı. Tam ekranda «Robotun SAĞ tərəfi ekranda» ayarını yoxlayın.'; chatLine('sys', 'Dönmə əks oldu, istiqaməti tərsinə çevirdim.'); }
+        if (Math.abs(deg) > Math.abs(prevDeg) + 3) { turnSign = -turnSign; sset('appr_sign', turnSign > 0 ? '1' : '-1'); if (++worse >= 3) return 'Dönmə istiqaməti düz çıxmadı. Tam ekranda «Robotun SAĞ tərəfi ekranda» ayarını yoxlayın.'; chatLine('sys', 'Dönmə əks oldu, istiqaməti tərsinə çevirdim.'); }
         else if (Math.abs(deg) > Math.abs(prevDeg) - 1) { if (++noProg >= 3) return 'Dönsəm də hədəf 0° xəttinə gəlmir. «Robotun SAĞ tərəfi ekranda» və «Görmə bucağı» ayarlarını yoxlayın.'; }
         else noProg = 0;
       }
@@ -3230,6 +3434,12 @@
     if (!isStop) activeUntil = 0; else if (intent === 'stop') activeUntil = 0;
     await runIntent(r, { b64: c.b64, heard: heard });
   }
+  // ╚══ 🟡 QIFILLANMIŞ KOD 14 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
   // v47: 1) səs sözbəsöz DƏQİQ yazıya çevrilir (heç nə əlavə edilmir), 2) yalnız ondan sonra mətn əsasında qərar verilir
 
 
@@ -3308,10 +3518,25 @@
   }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 15 · askRepeat, arr
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 15 · askRepeat, arr
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function askRepeat() {
     var arr = ['Bağışla, tam eşitmədim. Adımı çəkib təkrar de.', 'Düz anlamadım. Adımı çəkib bir də de.'], t = arr[Math.floor(Math.random() * arr.length)];
     chatLine('bot', t); remember('Robot', t); speak(t, 'ack').catch(function () {});
   }
+  // ╚══ 🟡 QIFILLANMIŞ KOD 15 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -3351,6 +3576,15 @@
   }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 16 · routeText, active, t, r
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 16 · routeText, active, t, r
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   async function routeText(text, called) {
     var active = Date.now() < activeUntil;
     var t = await gemini([{ text: routerPrompt(active, true) + '\nUser said: ' + JSON.stringify(text) }], { json: true, maxTokens: 900, fast: true, timeout: 9000 });
@@ -3358,6 +3592,12 @@
     r.heard = text;
     await dispatch(r, { text: text, called: called });
   }
+  // ╚══ 🟡 QIFILLANMIŞ KOD 16 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -3462,8 +3702,23 @@
   // #endregion
 
   // ---------- brauzer tanıması (varsa) ----------
+
+
+
+
+  // #region 🟢 QIFILLANMIŞ KOD 17 · rec, lastStopHeardT
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟢 QIFILLANMIŞ KOD 17 · rec, lastStopHeardT
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var rec = null;
   var lastStopHeardT = 0;
+  // ╚══ 🟢 QIFILLANMIŞ KOD 17 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -3555,6 +3810,15 @@
   }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 18 · stopBrowser, ctx, speaking, routing
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 18 · stopBrowser, ctx, speaking, routing
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function stopBrowser() { try { if (rec) { rec.onend = null; rec.onresult = null; rec.stop(); } } catch (e) {} rec = null; }
 
   // ---------- Gemini üçün mikrofon + nitq aşkarlama ----------
@@ -3586,6 +3850,12 @@
   function blobToBase64(blob) {
     return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(',')[1]); }; r.onerror = rej; r.readAsDataURL(blob); });
   }
+  // ╚══ 🟡 QIFILLANMIŞ KOD 18 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -3637,7 +3907,22 @@
   }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 19 · routeStartT
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 19 · routeStartT
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var routeStartT = 0;
+  // ╚══ 🟡 QIFILLANMIŞ KOD 19 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -3758,8 +4043,23 @@
   }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 20 · micPermission, micStarting
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 20 · micPermission, micStarting
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   function micPermission(cb) { permAsync(PERM_MIC).then(cb); }
   var micStarting = false, micFails = 0;
+  // ╚══ 🟡 QIFILLANMIŞ KOD 20 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -3849,6 +4149,15 @@
   }
   // ╚══ 🟡 SƏS SONU ══ 🔒 SON [Səs qəbulu və tanıma]
   // #endregion
+
+
+
+
+  // #region 🟡 QIFILLANMIŞ KOD 21 · tr, vsGender, vsVoiceName, warmApi
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟡 QIFILLANMIŞ KOD 21 · tr, vsGender, vsVoiceName, warmApi
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   setInterval(function () {                                           // mikrofon donarsa / sistem götürərsə özü yenidən açılır
     if (!voiceOn || VS.engine !== 'gemini' || micStarting || !ctx) return;
     if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
@@ -3912,6 +4221,12 @@
     }
     return null;
   }
+  // ╚══ 🟡 QIFILLANMIŞ KOD 21 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
   // "sağa dön" -> R 90°, "35 dərəcə sağa dön" -> R 35°, "geriyə dön" -> R 180°, "irəli 50 sm get" -> F 50 sm
 
 
@@ -3967,6 +4282,15 @@
   // ===== YERLİ ƏMR FİLTRİ (Local Keyword Guard) =====
   // Mətndə təməl hərəkət sözü varsa -> əmr LOKAL işlənir, Gemini-yə sorğu QƏTİYYƏN getmir.
   // Yalnız uzun (>8 söz) və ya sual/söhbət xarakterli cümlələr Gemini-yə keçir.
+
+
+
+
+  // #region 🟠 QIFILLANMIŞ KOD 22 · GUARD_MAX_WORDS, GUARD_CHAT, guardCanon, GUARD_KW
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟠 QIFILLANMIŞ KOD 22 · GUARD_MAX_WORDS, GUARD_CHAT, guardCanon, GUARD_KW
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var GUARD_MAX_WORDS = 8;
   var GUARD_CHAT = /\b(nedir|nedi|niye|nece|kimdir|kimdi|hara|haradadir|nagil|hekaye|danis|izah|hesab|yaz|oxu|sual|cavab|ad[iı]n)\b/;
   function guardCanon(n) {                                                           // tanıma səhvlərini / variantları kanonik formaya gətir
@@ -3988,6 +4312,12 @@
     for (var i = 0; i < GUARD_KW.length; i++) { var d = lev(w, GUARD_KW[i]); if (d <= lim && d < bd) { bd = d; best = GUARD_KW[i]; } }
     return best || w;
   }
+  // ╚══ 🟠 QIFILLANMIŞ KOD 22 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -4032,6 +4362,15 @@
   // ===== 1-ci MƏRHƏLƏ: YERLİ KOMANDA BAZASI (Local Dictionary) =====
   // Açar = deyilən ifadə (oyanma sözü "ziko" avtomatik kənarlaşdırılır, ona görə "ziko sağa dön" də "sağa dön" kimi tapılır).
   // Dəyər = icra olunacaq əmr. Yeni variant əlavə etmək üçün sadəcə siyahıya yazın.
+
+
+
+
+  // #region 🟠 QIFILLANMIŞ KOD 23 · LOCAL_DB, LOCAL_MAP, isZikoName, localWakeSet
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟠 QIFILLANMIŞ KOD 23 · LOCAL_DB, LOCAL_MAP, isZikoName, localWakeSet
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var LOCAL_DB = [
     { cmd: { drive: 'R', amount: 90,  unit: 'deg' }, say: ['sağa dön', 'sağa dönün', 'sağ tərəfə dön', 'sağa', 'sağ'] },          // giroskopik 90° sağa
     { cmd: { drive: 'L', amount: 90,  unit: 'deg' }, say: ['sola dön', 'sola dönün', 'sol tərəfə dön', 'sola', 'sol'] },          // giroskopik 90° sola
@@ -4049,6 +4388,12 @@
     if (isZikoName(rn)) { w.ziko = w.zeko = w.ziqo = w.zigo = w.siko = w.zico = 1; }      // "Ziko" üçün yaxın səhv eşitmələr; başqa adda (məs. "alo") yalnız yazılan ad
     return w;
   }
+  // ╚══ 🟠 QIFILLANMIŞ KOD 23 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 
 
 
@@ -4158,6 +4503,15 @@
   function localSimpleCommand(text) { if (isCompoundMove(text)) return null; return basicMotion(text) || dbLookup(text) || localKeywordGuard(text); }
   // ╚══ 🟠 ƏMR TANIMA SONU ══ 🔒 SON [Hərəkət əmrləri və dönmə]
   // #endregion
+
+
+
+
+  // #region 🟠 QIFILLANMIŞ KOD 24 · lastDriveSig, dupDrive, sig, lastGreetT
+  // ╔══════════════════════════════════════════════════════════════════
+  // ║ 🟠 QIFILLANMIŞ KOD 24 · lastDriveSig, dupDrive, sig, lastGreetT
+  // ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+  // ╟──────────────────────────────────────────────────────────────────
   var lastDriveSig = '', lastDriveT = 0;
   function dupDrive(c) {                                                             // eyni hərəkət əmri 3 san ərzində iki yolla gəlsə, ikincisini at ("dayan" həmişə keçir)
     if (!c || c.drive === 'S') return false;
@@ -4214,8 +4568,23 @@
   }, 150);
   var ver = document.getElementById('ver'); if (ver) ver.textContent = 'v59 ✓';
 })();
+  // ╚══ 🟠 QIFILLANMIŞ KOD 24 SONU ══ 🔒 SON [Qıfıllanmış kod]
+  // #endregion
+
+
+
+
 </script>
 <script>
+
+
+
+
+// #region 🟠 QIFILLANMIŞ KOD 25 · btn, MON, DAY, p
+// ╔══════════════════════════════════════════════════════════════════
+// ║ 🟠 QIFILLANMIŞ KOD 25 · btn, MON, DAY, p
+// ║ 🔒 QIFILLI [Qıfıllanmış kod]: bu hissəyə toxunma. Dəyişmək lazımdırsa əvvəlcə istifadəçidən icazə al.
+// ╟──────────────────────────────────────────────────────────────────
 (function () {                                                                   // kiçik saat və tarix: üçbucağa toxunanda açılır, yenidən toxunanda gizlənir
   var btn = document.getElementById('clkBtn'), box = document.getElementById('clkBox'), t = null;
   if (!btn || !box) return;
@@ -4231,4 +4600,10 @@
   btn.addEventListener('click', function () { show(box.style.display === 'none'); });
   try { if (localStorage.getItem('clk_open') === '1') show(true); } catch (e) {}
 })();
+// ╚══ 🟠 QIFILLANMIŞ KOD 25 SONU ══ 🔒 SON [Qıfıllanmış kod]
+// #endregion
+
+
+
+
 </script>
