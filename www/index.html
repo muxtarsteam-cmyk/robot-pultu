@@ -284,6 +284,7 @@
     <div class="row"><label for="dsCm">Xəttə düşəndə qalan (sm)</label><input id="dsCm" type="text" placeholder="20,30,45,65,90,130"></div>
     <div class="hint">Kamerada aşağıdan yuxarı məsafə xətləri çəkilir (azdan çoxa). Əşyanın yerə dəydiyi nöqtə hansı xəttə düşürsə, robot ora qədər olan məsafəni yuxarıdakı sm dəyərindən götürür. Eyni say qədər yer və sm yazın, vergüllə ayırın. Xətlər arası dəyərləri robot özü hesablayır.</div>
     <div class="row"><label for="pgap">Impulslar arası gözləmə (ms)</label><input id="pgap" type="number" min="150" max="5000" step="50" placeholder="700"></div>
+    <div class="row"><label for="pdense">Sıx impulslar arası (ms)</label><input id="pdense" type="number" min="60" max="400" step="10" placeholder="110"></div>
     <div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="pauto"> Giroskop sakitləşənə qədər gözlə (avto)</label></div>
     <div class="hint">1°–10° dönmələrdə robot hər impulsdan sonra ən azı bu qədər millisaniyə gözləyir. «Avto» açıqdırsa, bundan əlavə giroskopun titrəməsi sakitləşənə qədər (ən çox 3 san) gözləyir və yalnız ondan sonra ölçüb növbəti impulsu verir. Əllə yazmaq üçün «Avto»nu bağlayın.</div>
     <div class="row"><label for="rpmLimit">Limit: dəqiqədə</label><input id="rpmLimit" type="number" min="1" max="1000" step="1"></div>
@@ -2293,19 +2294,24 @@
     try {
       var nz = await gyroNoise(cur), thr = Math.max(0.15, nz * 1.5);                      // giroskopun öz titrəməsi → "sakit" sayılma həddi
       if (auto) await gyroSettle(cur, 0, true, thr);
-      // 1) İRİ MƏRHƏLƏ: hədəfin təxminən yarısını (≤5°) təpiklərlə ver; sonra giroskop oturana qədər gözlə
-      var coarse = deg >= 4 ? deg * 0.5 : 0, nC = coarse >= 0.8 * kickDeg ? Math.min(6, Math.max(1, Math.round(coarse / kickDeg))) : 0;
-      if (nC > 0) {
-        cum0 = cur.cum; await fire(dir, nC, 0); await gyroSettle(cur, gap, auto, thr);
-        var mv = cur.cum - cum0; if (mv > 0.15) { kickDeg = Math.max(0.3, Math.min(10, kickDeg * 0.5 + (mv / nC) * 0.5)); sset('kick_deg', kickDeg.toFixed(2)); if (!(msDeg > 0)) msDeg = kickDeg / 40 * 0.6; }
+      // 1) SIX İMPULSLAR (yalnız hədəf >5°): hədəfdən 5° əvvələ qədər tez-tez təpik; sonra giroskop oturana qədər gözlə. Bu mərhələ hədəfdən bir az əvvəl/sonra bitə bilər, incə mərhələ düzəldir
+      var dn = Math.max(60, Math.min(400, +pulseDenseMs || 110)), denseN = 0;
+      async function dense(goal) {
+        if (goal <= 0.8 * kickDeg) return;
+        var tg = Date.now(); send('P0\n'); await sleep(40); send(slowCmd(dir)); await sleep(40);
+        while (cur.cum + kickDeg * 0.7 < goal && denseN < 60 && Date.now() - tg < 10000) { chk(); send('K'); kicks++; denseN++; await sleep(dn); }
+        send('S'); stopBurst(); await sleep(120); await gyroSettle(cur, gap, auto, thr);
       }
+      if (deg > 5) await dense(deg - 5);
       // 2) İNCƏ MƏRHƏLƏ: hər addımda BİR kiçik impuls, giroskop tam oturandan sonra ölç, hədəfi keçibsə əks impuls
       while (steps < 30) {
         chk();
         if (Date.now() - t0 > 40000) throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı');
         if (gyAge() > 1500 && Date.now() - t0 > 2500) throw new Error('Giroskopdan məlumat gəlmir, robot dayandırıldı');
         var err = deg - cur.cum, ae = Math.abs(err);
-        if (ae <= tol) break;
+        if (err > 7 && deg > 5 && denseN < 60) { steps++; await dense(deg - 5); continue; }                    // hələ çox geridədirsə yenə sıx impulslar
+        var canImprove = ae >= 0.8 * kickDeg || (msDeg > 0 && ae >= 0.3);
+        if (ae <= tol || (ae <= 1.0 && !canImprove)) break;                                                    // ideal ±0,5°; bir impuls vəziyyəti pisləşdirəcəksə ±1°-ə qədər qəbul. >1° keçibsə əks impuls verilir
         if (ae >= best - 0.05) { if (++bad >= 3) break; } else bad = 0;              // 3 cəhddə yaxşılaşma yoxdursa dayan (əsmə olmasın)
         best = Math.min(best, ae);
         var d = err > 0 ? dir : opp(dir), before = cur.cum, useKick = ae >= 0.8 * kickDeg || !(msDeg > 0), n = 0, ms = 0;
@@ -2320,14 +2326,14 @@
         } else stuck++;
       }
       gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '°';
-      note('Dönmə (impuls rejimi): hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '° · ' + kicks + ' impuls · təpik ≈ ' + f1(kickDeg) + '° · gözləmə ' + gap + ' ms' + (auto ? ' + sakitləşmə (titrəmə ' + f1(nz) + '°)' : ''));
+      note('Dönmə (impuls rejimi): hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '° · ' + kicks + ' impuls (' + denseN + ' sıx) · təpik ≈ ' + f1(kickDeg) + '° · gözləmə ' + gap + ' ms' + (auto ? ' + sakitləşmə (titrəmə ' + f1(nz) + '°)' : ''));
     } finally { stopBurst(); try { send(pctCmd()); } catch (e) {} gt = null; gyLock = null; renderGyro(true); }
   }
   async function gyroTurn(dir, deg, fixDepth, osh) {
     fixDepth = fixDepth || 0; osh = osh || 0;
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir, robot dönməz. Şkalanı artırın');
     deg = Math.max(fixDepth ? 0.5 : 1, Math.min(360, +deg || 90));
-    if (deg <= 10 && !fixDepth) { await gyroPulseTurn(dir, deg); return; }                                     // 1°–10°: impuls rejimi
+    if (deg <= 40 && !fixDepth) { await gyroPulseTurn(dir, deg); return; }                                     // 1°–40°: yalnız impuls rejimi (>5°: əvvəl sıx impulslar, hədəfdən 5° əvvəl dayan, sonra dəqiq impulslar; ≤5°: yalnız sakit dəqiq impulslar)
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var cmd = slowCmd(dir), maxMs = Math.max(8000, deg * 200 + 5000);
     var small = deg <= 40, pct = small ? 50 : 100, errAfter = null, pctCap = 100, lastEsc = 0;   // >40° (sağa/sola/geriyə dön, 45°...): 100% sürət. 1°–40°: 50%-dən başla, tərpənməsə 1%-1% qaldır (100%-ə qədər, əl çəkmədən)
@@ -2927,6 +2933,8 @@
     return a[a.length - 1].c;
   }
   var pulseGapMs = +sget('pulse_gap', '700') || 700, pulseAuto = sget('pulse_auto', '1') !== '0';      // impulslar arası gözləmə və giroskop sakitləşməsini gözləmə
+  var pulseDenseMs = +sget('pulse_dense', '110') || 110; $('pdense').value = pulseDenseMs;
+  $('pdense').addEventListener('change', function () { pulseDenseMs = Math.max(60, Math.min(400, +this.value || 110)); this.value = pulseDenseMs; sset('pulse_dense', pulseDenseMs); note('Sıx impulslar arası: ' + pulseDenseMs + ' ms'); });
   $('pgap').value = pulseGapMs; $('pauto').checked = pulseAuto;
   $('pgap').addEventListener('change', function () { pulseGapMs = Math.max(150, Math.min(5000, +this.value || 700)); this.value = pulseGapMs; sset('pulse_gap', pulseGapMs); note('Impulslar arası gözləmə: ' + pulseGapMs + ' ms'); });
   $('pauto').addEventListener('change', function () { pulseAuto = this.checked; sset('pulse_auto', pulseAuto ? '1' : '0'); note('Giroskop sakitləşməsini gözləmə: ' + (pulseAuto ? 'avto açıq' : 'bağlı')); });
