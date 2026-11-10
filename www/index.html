@@ -283,6 +283,9 @@
     <div class="row"><label for="dsPos">Xətlərin yeri (% aşağıdan)</label><input id="dsPos" type="text" placeholder="12,26,40,54,68,82"></div>
     <div class="row"><label for="dsCm">Xəttə düşəndə qalan (sm)</label><input id="dsCm" type="text" placeholder="20,30,45,65,90,130"></div>
     <div class="hint">Kamerada aşağıdan yuxarı məsafə xətləri çəkilir (azdan çoxa). Əşyanın yerə dəydiyi nöqtə hansı xəttə düşürsə, robot ora qədər olan məsafəni yuxarıdakı sm dəyərindən götürür. Eyni say qədər yer və sm yazın, vergüllə ayırın. Xətlər arası dəyərləri robot özü hesablayır.</div>
+    <div class="row"><label for="pgap">Impulslar arası gözləmə (ms)</label><input id="pgap" type="number" min="150" max="5000" step="50" placeholder="700"></div>
+    <div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="pauto"> Giroskop sakitləşənə qədər gözlə (avto)</label></div>
+    <div class="hint">1°–10° dönmələrdə robot hər impulsdan sonra ən azı bu qədər millisaniyə gözləyir. «Avto» açıqdırsa, bundan əlavə giroskopun titrəməsi sakitləşənə qədər (ən çox 3 san) gözləyir və yalnız ondan sonra ölçüb növbəti impulsu verir. Əllə yazmaq üçün «Avto»nu bağlayın.</div>
     <div class="row"><label for="rpmLimit">Limit: dəqiqədə</label><input id="rpmLimit" type="number" min="1" max="1000" step="1"></div>
     <div class="row"><label for="rpdLimit">Limit: gündə</label><input id="rpdLimit" type="number" min="1" max="100000" step="10"></div>
     <div class="row"><button id="limReset" style="flex:1">Limit sayğacını sıfırla</button></div>
@@ -2258,6 +2261,20 @@
   // ---- KİÇİK DÖNMƏ (≤10°): İMPULS rejimi. Robot qısa, güclü impulslarla dönür: hər impuls arasında dayanıb giroskopla ölçür, hədəfi keçibsə əks impuls verir. ----
   // 'K' Arduino-da dəqiq 40 ms, 255 gücdə təpikdir (P0 ilə əsas sürət 0 edilib ki, təpikdən başqa motor işləməsin). Bir təpiyin verdiyi bucaq öyrənilir (kickDeg).
   var kickDeg = +sget('kick_deg', '2') || 2, msDeg = +sget('ms_deg', '') || 0;           // təpik başına bucaq; telefonla vaxtlanan qısa impulsun milisaniyəyə düşən bucağı
+  async function gyroNoise(cur) {                                                        // robot dayanıb, impuls yoxdur: giroskopun öz titrəməsi (500 ms-də ən böyük-ən kiçik fərq)
+    var mn = 1e9, mx = -1e9, t1 = Date.now();
+    while (Date.now() - t1 < 500) { chk(); await sleep(40); mn = Math.min(mn, cur.cum); mx = Math.max(mx, cur.cum); }
+    return Math.max(0, mx - mn);
+  }
+  async function gyroSettle(cur, minMs, auto, thr) {                                     // impulsdan sonra: ən azı minMs gözlə, sonra giroskop (titrəmə) sakitləşənə qədər (300 ms-də dəyişmə ≤ thr), ən çox 3 san
+    await sleep(minMs); if (!auto) return true;
+    var win = [], lim = Date.now() + 3000;
+    while (Date.now() < lim) {
+      chk(); await sleep(50); var n = Date.now(); win.push([n, cur.cum]); while (win.length > 1 && n - win[0][0] > 300) win.shift();
+      if (n - win[0][0] >= 280) { var mn = 1e9, mx = -1e9, k; for (k = 0; k < win.length; k++) { mn = Math.min(mn, win[k][1]); mx = Math.max(mx, win[k][1]); } if (mx - mn <= thr) return true; }
+    }
+    return false;
+  }
   async function gyroPulseTurn(dir, deg) {
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, cumO: 0, cumR: 0, rateOk: (Date.now() - gy.rateAt) < 500, rateChecked: true,
@@ -2265,37 +2282,45 @@
       lead: 0, hist: [], done: true, cumAtDone: Infinity, doneAt: Date.now(), escalated: true, progAt: Date.now() };   // done=true: evalTurn özü dayandırmasın, dayanmanı bu funksiya idarə edir
     gyLock = { h: (((cur.startHeading + cur.sign * deg) % 360) + 360) % 360, t: Date.now() };
     burstTok++;
-    var t0 = Date.now(), steps = 0, stuck = 0, bad = 0, best = 1e9, kicks = 0, tol = 0.5;
+    var gap = Math.max(150, Math.min(5000, +pulseGapMs || 700)), auto = !!pulseAuto;      // impulslar arası gözləmə (ayarlardan) + giroskop sakitləşməsini gözləmə
+    var t0 = Date.now(), steps = 0, stuck = 0, bad = 0, best = 1e9, kicks = 0, tol = 0.5, cum0 = 0;
+    function opp(d) { return d === 'R' ? 'L' : 'R'; }
+    async function fire(d, n, ms) {                                                      // n təpik (Arduino-da dəqiq 40 ms, 255 güc) və ya ms uzunluqlu telefonla vaxtlanan qısa impuls
+      if (n > 0) { send('P0\n'); await sleep(40); send(slowCmd(d)); await sleep(40); for (var q = 0; q < n; q++) { chk(); send('K'); kicks++; if (q < n - 1) await sleep(gap); else await sleep(120); } }
+      else { send('P' + pctToPwm(95) + '\n'); await sleep(40); send(slowCmd(d)); await sleep(ms); kicks++; }
+      send('S'); stopBurst();
+    }
     try {
+      var nz = await gyroNoise(cur), thr = Math.max(0.15, nz * 1.5);                      // giroskopun öz titrəməsi → "sakit" sayılma həddi
+      if (auto) await gyroSettle(cur, 0, true, thr);
+      // 1) İRİ MƏRHƏLƏ: hədəfin təxminən yarısını (≤5°) təpiklərlə ver; sonra giroskop oturana qədər gözlə
+      var coarse = deg >= 4 ? deg * 0.5 : 0, nC = coarse >= 0.8 * kickDeg ? Math.min(6, Math.max(1, Math.round(coarse / kickDeg))) : 0;
+      if (nC > 0) {
+        cum0 = cur.cum; await fire(dir, nC, 0); await gyroSettle(cur, gap, auto, thr);
+        var mv = cur.cum - cum0; if (mv > 0.15) { kickDeg = Math.max(0.3, Math.min(10, kickDeg * 0.5 + (mv / nC) * 0.5)); sset('kick_deg', kickDeg.toFixed(2)); if (!(msDeg > 0)) msDeg = kickDeg / 40 * 0.6; }
+      }
+      // 2) İNCƏ MƏRHƏLƏ: hər addımda BİR kiçik impuls, giroskop tam oturandan sonra ölç, hədəfi keçibsə əks impuls
       while (steps < 30) {
         chk();
-        if (Date.now() - t0 > 30000) throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı');
+        if (Date.now() - t0 > 40000) throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı');
         if (gyAge() > 1500 && Date.now() - t0 > 2500) throw new Error('Giroskopdan məlumat gəlmir, robot dayandırıldı');
         var err = deg - cur.cum, ae = Math.abs(err);
         if (ae <= tol) break;
-        if (ae >= best - 0.05) { if (++bad >= 3) break; } else bad = 0;            // 3 cəhddə yaxşılaşma yoxdursa dayan (əsmə olmasın)
+        if (ae >= best - 0.05) { if (++bad >= 3) break; } else bad = 0;              // 3 cəhddə yaxşılaşma yoxdursa dayan (əsmə olmasın)
         best = Math.min(best, ae);
-        var d = err > 0 ? dir : (dir === 'R' ? 'L' : 'R'), before = cur.cum, useKick = ae >= 0.8 * kickDeg || !(msDeg > 0), n = 0, ms = 0;
-        if (useKick) {                                                             // böyük fərq: Arduino-da dəqiq vaxtlanan 40 ms-lik 255 güclü təpiklər
-          n = Math.min(6, Math.max(1, Math.round(ae / kickDeg)) + stuck);
-          send('P0\n'); await sleep(40); send(slowCmd(d)); await sleep(40);
-          for (var q = 0; q < n; q++) { chk(); send('K'); await sleep(110); kicks++; }
-          send('S'); stopBurst();
-        } else {                                                                   // kiçik fərq (bir təpikdən az): telefonla vaxtlanan qısa güclü impuls (~95%)
-          ms = Math.max(15, Math.min(150, Math.round(ae / msDeg * (1 + 0.5 * stuck))));
-          send('P' + pctToPwm(95) + '\n'); await sleep(40); send(slowCmd(d)); await sleep(ms); send('S'); stopBurst(); kicks++;
-        }
-        await sleep(380);                                                          // robot oturunca ölç
-        var moved = (cur.cum - before) * (d === dir ? 1 : -1); steps++;
+        var d = err > 0 ? dir : opp(dir), before = cur.cum, useKick = ae >= 0.8 * kickDeg || !(msDeg > 0), n = 0, ms = 0;
+        if (useKick) { n = (ae >= 3 * kickDeg ? 2 : 1) + stuck; n = Math.min(n, 4); await fire(d, n, 0); }
+        else { ms = Math.max(15, Math.min(150, Math.round(ae / msDeg * (1 + 0.5 * stuck)))); await fire(d, 0, ms); }
+        await gyroSettle(cur, gap, auto, thr); steps++;
+        var moved = (cur.cum - before) * (d === dir ? 1 : -1);
         if (moved > 0.15) {
           stuck = 0;
-          if (useKick) { kickDeg = Math.max(0.3, Math.min(10, kickDeg * 0.5 + (moved / n) * 0.5)); sset('kick_deg', kickDeg.toFixed(2)); if (!(msDeg > 0)) { msDeg = kickDeg / 40 * 0.6; } }
+          if (useKick) { kickDeg = Math.max(0.3, Math.min(10, kickDeg * 0.5 + (moved / n) * 0.5)); sset('kick_deg', kickDeg.toFixed(2)); if (!(msDeg > 0)) msDeg = kickDeg / 40 * 0.6; }
           else { msDeg = Math.max(0.002, Math.min(0.5, (msDeg > 0 ? msDeg * 0.5 : 0) + (moved / ms) * (msDeg > 0 ? 0.5 : 1))); sset('ms_deg', msDeg.toFixed(4)); }
         } else stuck++;
       }
-      await sleep(250);
       gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '°';
-      note('Dönmə (impuls rejimi): hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '° · ' + kicks + ' impuls · təpik ≈ ' + f1(kickDeg) + '°');
+      note('Dönmə (impuls rejimi): hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '° · ' + kicks + ' impuls · təpik ≈ ' + f1(kickDeg) + '° · gözləmə ' + gap + ' ms' + (auto ? ' + sakitləşmə (titrəmə ' + f1(nz) + '°)' : ''));
     } finally { stopBurst(); try { send(pctCmd()); } catch (e) {} gt = null; gyLock = null; renderGyro(true); }
   }
   async function gyroTurn(dir, deg, fixDepth, osh) {
@@ -2901,6 +2926,10 @@
     for (i = 1; i < a.length; i++) if (yb <= a[i].p) { var q = a[i].p - a[i - 1].p; return q > 0 ? a[i - 1].c + (yb - a[i - 1].p) * (a[i].c - a[i - 1].c) / q : a[i].c; }
     return a[a.length - 1].c;
   }
+  var pulseGapMs = +sget('pulse_gap', '700') || 700, pulseAuto = sget('pulse_auto', '1') !== '0';      // impulslar arası gözləmə və giroskop sakitləşməsini gözləmə
+  $('pgap').value = pulseGapMs; $('pauto').checked = pulseAuto;
+  $('pgap').addEventListener('change', function () { pulseGapMs = Math.max(150, Math.min(5000, +this.value || 700)); this.value = pulseGapMs; sset('pulse_gap', pulseGapMs); note('Impulslar arası gözləmə: ' + pulseGapMs + ' ms'); });
+  $('pauto').addEventListener('change', function () { pulseAuto = this.checked; sset('pulse_auto', pulseAuto ? '1' : '0'); note('Giroskop sakitləşməsini gözləmə: ' + (pulseAuto ? 'avto açıq' : 'bağlı')); });
   ['dsPos', 'dsCm'].forEach(function (id) { $(id).addEventListener('change', function () { dsPos = $('dsPos').value; dsCm = $('dsCm').value; sset('ds_pos', dsPos); sset('ds_cm', dsCm); try { drawBands(); } catch (e) {} note('Məsafə xətləri saxlanıldı: ' + dsPoints().length + ' xətt'); }); });
   applyMirror();
   // Kadrdakı üfüqi mövqe (0..1) -> bucaq (dərəcə): 0 = düz qarşı, + sağ, − sol. Çəkilən dərəcə xətləri ilə eyni həndəsə
