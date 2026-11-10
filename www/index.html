@@ -87,13 +87,16 @@
   .gy { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:10px; font-size:15px; color:var(--muted); }
   .gy div { background:#0f172a; border-radius:8px; padding:5px 6px; text-align:center; }
   .gy b { display:block; color:var(--text); font-size:15px; font-variant-numeric:tabular-nums; }
-  .gtop { display:flex; gap:10px; align-items:center; margin-top:8px; }
-  .gdial { flex:0 0 150px; height:150px; border-radius:50%; border:2px solid #475569; position:relative; background:#0f172a; }
-  .gdial i { position:absolute; left:calc(50% - 3px); top:10px; width:6px; height:65px; background:var(--accent); border-radius:2px; transform-origin:50% 100%; }
-  .gdial u { position:absolute; left:calc(50% - 6px); top:-2px; width:12px; height:12px; border-radius:50%; background:var(--ok); }
-  .gdial s { position:absolute; left:calc(50% - 2px); top:2px; width:4px; height:73px; background:#f59e0b; transform-origin:50% 100%; display:none; text-decoration:none; }
-  .gdial s::before { content:''; position:absolute; top:-6px; left:-5px; width:14px; height:14px; border-radius:50%; background:#f59e0b; }
-  .gdial b { position:absolute; left:calc(50% - 2px); top:10px; width:4px; height:65px; background:var(--ok); transform-origin:50% 100%; display:none; }
+  .gtop { display:flex; flex-direction:column; gap:10px; align-items:stretch; margin-top:8px; }
+  .gdial { width:min(100%,340px); aspect-ratio:1/1; flex:none; margin:0 auto; border-radius:50%; border:2px solid #475569; position:relative; background:#0f172a; }
+  .gdial svg { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
+  .gdial i { position:absolute; left:calc(50% - 0.75px); top:4%; width:1.5px; height:46%; background:var(--accent); border-radius:1px; transform-origin:50% 100%; }
+  .gdial u { position:absolute; left:calc(50% - 3px); top:2.2%; width:6px; height:6px; border-radius:50%; background:var(--ok); }
+  .gdial s { position:absolute; left:calc(50% - 0.75px); top:4%; width:1.5px; height:46%; background:#f59e0b; transform-origin:50% 100%; display:none; text-decoration:none; }
+  .gdial s::before { content:''; position:absolute; top:-3px; left:-2.25px; width:6px; height:6px; border-radius:50%; background:#f59e0b; }
+  .gdial b { position:absolute; left:calc(50% - 0.75px); top:4%; width:1.5px; height:46%; background:var(--ok); transform-origin:50% 100%; display:none; }
+  .gdial p { position:absolute; left:calc(50% - 1px); top:4%; width:2px; height:46%; margin:0; background:#ef4444; transform-origin:50% 100%; display:none; border-radius:1px; }
+  .gdial p::before { content:''; position:absolute; top:-4px; left:-3px; width:8px; height:8px; border-radius:50%; background:#ef4444; }
   .gprog { height:14px; border-radius:7px; background:#334155; margin-top:8px; overflow:hidden; }
   .gprog i { display:block; height:100%; width:0%; background:var(--ok); transition:width .08s linear; }
   .gtxt { flex:1; font-size:17px; color:var(--muted); line-height:1.5; }
@@ -157,7 +160,7 @@
     <b style="font-size:13px">🧭 Giroskop monitoru</b>
     <div class="row"><button id="gyBtn" class="primary" style="flex:1">🧭 Giroskopu aktivləşdir (icazə ver)</button></div>
     <div class="gtop">
-      <div class="gdial"><u></u><b id="gyTgt"></b><s id="gyHold"></s><i id="gyNeedle"></i></div>
+      <div class="gdial"><svg id="gyScale" viewBox="-160 -160 320 320"></svg><u></u><b id="gyTgt"></b><p id="gyLock"></p><s id="gyHold"></s><i id="gyNeedle"></i></div>
       <div class="gtxt"><span id="gyState">Giroskop aktiv deyil</span><br>Dönmə: <b id="gyTurn">—</b></div>
     </div>
     <div class="gprog"><i id="gyProg"></i></div>
@@ -2254,7 +2257,7 @@
   async function gyroTurn(dir, deg, fixDepth, osh) {
     fixDepth = fixDepth || 0; osh = osh || 0;
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir, robot dönməz. Şkalanı artırın');
-    deg = Math.max(1, Math.min(360, +deg || 90));
+    deg = Math.max(fixDepth ? 0.5 : 1, Math.min(360, +deg || 90));
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var cmd = slowCmd(dir), maxMs = Math.max(8000, deg * 200 + 5000);
     var small = deg <= 40, pct = small ? 50 : 100, errAfter = null, pctCap = 100, lastEsc = 0;   // >40° (sağa/sola/geriyə dön, 45°...): 100% sürət. 1°–40°: 50%-dən başla, tərpənməsə 1%-1% qaldır (100%-ə qədər, əl çəkmədən)
@@ -2262,6 +2265,7 @@
     var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, cumO: 0, cumR: 0, rateOk: (Date.now() - gy.rateAt) < 500, rateChecked: false,
       mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis, startAlpha: gy.alpha, startHeading: (axis === 'y' ? hy : hz).h,
       lead: 0, hist: [], done: false, escalated: false, progAt: Date.now() + (small ? 200 : 800) };
+    if (!fixDepth) gyLock = { h: (((cur.startHeading + cur.sign * deg) % 360) + 360) % 360, t: Date.now() }; else if (gyLock) gyLock.t = Date.now();   // hədəf bucaq KİLİDLƏNİR (ekranda qırmızı işarə), düzəlişlər zamanı dəyişmir
     burstTok++;
     var t0 = Date.now(), lastSend = 0;
     try {
@@ -2287,14 +2291,15 @@
       note('Dönmə: hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '°' + (small ? ' (yavaş rejim, son sürət ' + pct + '%)' : ''));
       if (small) errAfter = deg - cur.cum;                                                                     // + = az dönüb, − = aşıb
     } finally { gt = null; renderGyro(true); }
-    var tol = Math.max(1.5, deg * 0.1);                                                                       // buraxılan xəta: 5° üçün ±1,5°, 20° üçün ±2°, 40° üçün ±4° (giroskop səs-küyündən kiçik düzəlişlər robotu sağa-sola əsdirirdi)
-    if (small && fixDepth < 8 && errAfter != null && Math.abs(errAfter) >= tol && Math.abs(errAfter) <= 40) {   // dəqiqləşdirmə: aşıbsa əks tərəfə, çatmayıbsa irəli
+    var tol = (fixDepth || deg <= 8) ? 0.8 : Math.max(1, deg * 0.1);                                           // buraxılan xəta: kiçik bucaqlarda ±0,8°, böyüklərdə hədəfin 10%-i
+    if (small && fixDepth < 12 && errAfter != null && Math.abs(errAfter) >= tol && Math.abs(errAfter) <= 40) {   // dəqiqləşdirmə: aşıbsa əks tərəfə, çatmayıbsa irəli
       var nOs = osh + (errAfter < 0 ? 1 : 0);                                                                  // aşma sayı: iki dəfə aşıbsa sağa-sola əsmə başlayır, dayan
-      if (nOs >= 2) { note('Dəqiqləşdirmə dayandı (sağa-sola əsmə), qalan fərq ' + f1(errAfter) + '°'); return; }
+      if (nOs >= 4) { note('Dəqiqləşdirmə dayandı (sağa-sola əsmə), qalan fərq ' + f1(errAfter) + '°'); if (!fixDepth) gyLock = null; return; }
       chk(); note('Dəqiqləşdirirəm: ' + f1(errAfter) + '° ' + (errAfter > 0 ? 'çatmır' : 'artıqdır'));
       try { await gyroTurn(errAfter > 0 ? dir : (dir === 'R' ? 'L' : 'R'), Math.abs(errAfter), fixDepth + 1, nOs); }
       catch (e) { if (e && /dönmür|vaxtı bitdi|əks tərəfə/.test(String(e.message))) note('Dəqiqləşdirmə alınmadı, əsas dönmə qalır: ' + e.message); else throw e; }   // dəqiqləşdirmə uğursuz olsa əmri xətaya salmır
     }
+    if (!fixDepth) gyLock = null;
   }
   async function turnFor(dir, deg) {
     chk();
@@ -2812,6 +2817,20 @@
   });
   $('fsOn').addEventListener('click', function () { fsOn = !fsOn; sset('fs_on', fsOn ? '1' : '0'); fsLabels(); drawBands(); });
   $('fsMir').addEventListener('click', function () { camMirror = true; sset('cam_mirror', '1'); applyMirror(); fsLabels(); });   // güzgü həmişə açıq saxlanılır
+  var gyLock = null;                                                                    // dönmə əmrində KİLİDLƏNMİŞ mütləq hədəf (qırmızı işarə): düzəldici dönmələr zamanı yerini dəyişmir
+  (function () {                                                                         // 360° şkala: hər 1° nöqtə, hər 5° rəqəm (üstdə 360·0)
+    var svg = $('gyScale'); if (!svg) return; var h = '', i, a, sn, cs, big, rot;
+    for (i = 0; i < 360; i++) {
+      a = i * Math.PI / 180; sn = Math.sin(a); cs = -Math.cos(a);
+      if (i % 5) h += '<line x1="' + (143 * sn).toFixed(2) + '" y1="' + (143 * cs).toFixed(2) + '" x2="' + (154 * sn).toFixed(2) + '" y2="' + (154 * cs).toFixed(2) + '" stroke="#64748b" stroke-width="0.45"/>';   // hər 1° nazik uzun xətt
+      else { h += '<line x1="' + (141 * sn).toFixed(2) + '" y1="' + (141 * cs).toFixed(2) + '" x2="' + (155 * sn).toFixed(2) + '" y2="' + (155 * cs).toFixed(2) + '" stroke="#cbd5e1" stroke-width="0.8"/>';   // hər 5° bir az uzun xətt + rəqəm
+        big = i % 90 === 0; rot = (i > 90 && i < 270) ? 90 : -90;
+        h += '<text transform="rotate(' + i + ') translate(0,-132) rotate(' + rot + ')" text-anchor="middle" dominant-baseline="central" font-size="' + (big ? 9.5 : 8.5) + '" font-family="sans-serif" font-weight="' + (big ? 700 : 400) + '" fill="' + (big ? '#f1f5f9' : '#94a3b8') + '">' + (i === 0 ? '360·0' : i) + '</text>'; }
+    }
+    svg.innerHTML = h;
+  })();
+  setInterval(function () { var el = $('gyLock'); if (!el) return; var on = gyLock && (gt || Date.now() - gyLock.t < 4000);
+    if (on) { el.style.display = 'block'; el.style.transform = 'rotate(' + angleDiff(gyLock.h, gy.zero == null ? 0 : gy.zero) + 'deg)'; } else el.style.display = 'none'; }, 100);
   function recomputeRot() { camRotDeg = (((camBase + (camAuto ? autoAdd : 0)) % 360) + 360) % 360; applyMirror(); fsLabels(); if (camFS.style.display === 'block') drawBands(); }
   function setAutoAdd() { autoAdd = ((((camAuto === 2 ? 1 : -1) * autoSnap) % 360) + 360) % 360; }
   $('fsRot').addEventListener('click', function () { camBase = (camBase + 90) % 360; sset('cam_rot90', camBase); recomputeRot(); });
