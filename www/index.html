@@ -2254,10 +2254,55 @@
   // "sağa dön" = 90°. Əmr bir dəfə verilir, robot giroskopla hədəf bucağa çatana qədər dönür, hədəfə çatanda DAYANIR.
   // Dayanma anı bucaq sürətinə görə əvvəlcədən hesablanır (əyləc gecikməsi). Geri düzəliş, təkrar cəhd, öyrənmə və avtomatik sürət dəyişmə YOXDUR.
   var TURN_LAT = 0.13;                                                                       // əmrin robota çatma + motorun dayanma gecikməsi (san)
+
+  // ---- KİÇİK DÖNMƏ (≤10°): İMPULS rejimi. Robot qısa, güclü impulslarla dönür: hər impuls arasında dayanıb giroskopla ölçür, hədəfi keçibsə əks impuls verir. ----
+  // 'K' Arduino-da dəqiq 40 ms, 255 gücdə təpikdir (P0 ilə əsas sürət 0 edilib ki, təpikdən başqa motor işləməsin). Bir təpiyin verdiyi bucaq öyrənilir (kickDeg).
+  var kickDeg = +sget('kick_deg', '2') || 2, msDeg = +sget('ms_deg', '') || 0;           // təpik başına bucaq; telefonla vaxtlanan qısa impulsun milisaniyəyə düşən bucağı
+  async function gyroPulseTurn(dir, deg) {
+    var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
+    var cur = gt = { dir: dir, sign: dir === 'R' ? 1 : -1, target: deg, cum: 0, cumO: 0, cumR: 0, rateOk: (Date.now() - gy.rateAt) < 500, rateChecked: true,
+      mark: 0, last: (axis === 'y' ? hy : hz).h, axis: axis, startAlpha: gy.alpha, startHeading: (axis === 'y' ? hy : hz).h,
+      lead: 0, hist: [], done: true, cumAtDone: Infinity, doneAt: Date.now(), escalated: true, progAt: Date.now() };   // done=true: evalTurn özü dayandırmasın, dayanmanı bu funksiya idarə edir
+    gyLock = { h: (((cur.startHeading + cur.sign * deg) % 360) + 360) % 360, t: Date.now() };
+    burstTok++;
+    var t0 = Date.now(), steps = 0, stuck = 0, bad = 0, best = 1e9, kicks = 0, tol = 0.5;
+    try {
+      while (steps < 30) {
+        chk();
+        if (Date.now() - t0 > 30000) throw new Error('Dönmə vaxtı bitdi (' + f1(cur.cum) + '° / ' + deg + '°), robot dayandırıldı');
+        if (gyAge() > 1500 && Date.now() - t0 > 2500) throw new Error('Giroskopdan məlumat gəlmir, robot dayandırıldı');
+        var err = deg - cur.cum, ae = Math.abs(err);
+        if (ae <= tol) break;
+        if (ae >= best - 0.05) { if (++bad >= 3) break; } else bad = 0;            // 3 cəhddə yaxşılaşma yoxdursa dayan (əsmə olmasın)
+        best = Math.min(best, ae);
+        var d = err > 0 ? dir : (dir === 'R' ? 'L' : 'R'), before = cur.cum, useKick = ae >= 0.8 * kickDeg || !(msDeg > 0), n = 0, ms = 0;
+        if (useKick) {                                                             // böyük fərq: Arduino-da dəqiq vaxtlanan 40 ms-lik 255 güclü təpiklər
+          n = Math.min(6, Math.max(1, Math.round(ae / kickDeg)) + stuck);
+          send('P0\n'); await sleep(40); send(slowCmd(d)); await sleep(40);
+          for (var q = 0; q < n; q++) { chk(); send('K'); await sleep(110); kicks++; }
+          send('S'); stopBurst();
+        } else {                                                                   // kiçik fərq (bir təpikdən az): telefonla vaxtlanan qısa güclü impuls (~95%)
+          ms = Math.max(15, Math.min(150, Math.round(ae / msDeg * (1 + 0.5 * stuck))));
+          send('P' + pctToPwm(95) + '\n'); await sleep(40); send(slowCmd(d)); await sleep(ms); send('S'); stopBurst(); kicks++;
+        }
+        await sleep(380);                                                          // robot oturunca ölç
+        var moved = (cur.cum - before) * (d === dir ? 1 : -1); steps++;
+        if (moved > 0.15) {
+          stuck = 0;
+          if (useKick) { kickDeg = Math.max(0.3, Math.min(10, kickDeg * 0.5 + (moved / n) * 0.5)); sset('kick_deg', kickDeg.toFixed(2)); if (!(msDeg > 0)) { msDeg = kickDeg / 40 * 0.6; } }
+          else { msDeg = Math.max(0.002, Math.min(0.5, (msDeg > 0 ? msDeg * 0.5 : 0) + (moved / ms) * (msDeg > 0 ? 0.5 : 1))); sset('ms_deg', msDeg.toFixed(4)); }
+        } else stuck++;
+      }
+      await sleep(250);
+      gy.lastRes = 'hədəf ' + f1(deg) + '° → nəticə ' + f1(cur.cum) + '°';
+      note('Dönmə (impuls rejimi): hədəf ' + f1(deg) + '°, nəticə ' + f1(cur.cum) + '° · ' + kicks + ' impuls · təpik ≈ ' + f1(kickDeg) + '°');
+    } finally { stopBurst(); try { send(pctCmd()); } catch (e) {} gt = null; gyLock = null; renderGyro(true); }
+  }
   async function gyroTurn(dir, deg, fixDepth, osh) {
     fixDepth = fixDepth || 0; osh = osh || 0;
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir, robot dönməz. Şkalanı artırın');
     deg = Math.max(fixDepth ? 0.5 : 1, Math.min(360, +deg || 90));
+    if (deg <= 10 && !fixDepth) { await gyroPulseTurn(dir, deg); return; }                                     // 1°–10°: impuls rejimi
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var cmd = slowCmd(dir), maxMs = Math.max(8000, deg * 200 + 5000);
     var small = deg <= 40, pct = small ? 50 : 100, errAfter = null, pctCap = 100, lastEsc = 0;   // >40° (sağa/sola/geriyə dön, 45°...): 100% sürət. 1°–40°: 50%-dən başla, tərpənməsə 1%-1% qaldır (100%-ə qədər, əl çəkmədən)
