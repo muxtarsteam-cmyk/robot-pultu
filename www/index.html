@@ -2602,7 +2602,7 @@
     fixDepth = fixDepth || 0; osh = osh || 0;
     if (turnPct <= 0) throw new Error('Dönmə sürəti 0%-dir, robot dönməz. Şkalanı artırın');
     deg = Math.max(fixDepth ? 0.5 : 1, Math.min(360, +deg || 90));
-    if (!fixDepth) { await gyroPulseTurn(dir, deg); return; }                                     // 2026-11-20 (2): BÜTÜN bucaqlar (90°, 180° də) eyni qayda: sürətli dön, hədəfdən ~5° əvvəl dayan, yavaş-yavaş hədəfə çat.                                     // 1°–40°: yalnız impuls rejimi (>5°: əvvəl sıx impulslar, hədəfdən 5° əvvəl dayan, sonra dəqiq impulslar; ≤5°: yalnız sakit dəqiq impulslar)
+    if (!fixDepth && deg !== 90 && deg !== 180) { await gyroPulseTurn(dir, deg); return; }                // 2026-11-20 (3): «sağa/sola dön» (90°) və «geriyə dön» (180°) = BİR dəfəyə kəsilməz dönmə, sonda xırda impuls/düzəliş YOXDUR. Digər bucaqlar (43°, 27°...): sürətli + hədəfdən ~5° əvvəl dayan + yavaş çat.
     var hy = axisHeading(gy.alpha, gy.beta, gy.gamma, 'y'), hz = axisHeading(gy.alpha, gy.beta, gy.gamma, 'z'), axis = pickAxis(hy, hz);
     var cmd = slowCmd(dir), maxMs = Math.max(8000, deg * 200 + 5000);
     var small = deg <= 40, pct = small ? 50 : 100, errAfter = null, pctCap = 100, lastEsc = 0;   // >40° (sağa/sola/geriyə dön, 45°...): 100% sürət. 1°–40°: 50%-dən başla, tərpənməsə 1%-1% qaldır (100%-ə qədər, əl çəkmədən)
