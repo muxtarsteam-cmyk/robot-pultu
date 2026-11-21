@@ -474,6 +474,43 @@
   });
 })();
 </script>
+<script>
+/* KAMERA EKRANI TƏMİZ (2026-11-20): tam ekran kamerada yazılar/düymələr (panel, zoom yazısı, kamera siyahısı, ✕) 8 saniyədən sonra özü gizlənir ki, şəkil aydın görünsün.
+   Ekrana BİR DƏFƏ toxun = yazılar çıxır; yenə BİR DƏFƏ toxun = dərhal gizlənir (10 san gözləmək lazım deyil). Panelə toxunanda/yazanda vaxt yenidən sayılır.
+   Xətlər və dərəcə şkalası (kamera üzərindəki çəkilmiş hissə) həmişə görünür. Müddət: window.__camUiMs (ms), standart 8000. Qıfıllı kodlara toxunulmayıb. */
+(function () {
+  var timer = null, hidden = false, wasOpen = false, tap = null, extra = 0;
+  function $(i) { return document.getElementById(i); }
+  var css = document.createElement('style');
+  css.textContent = '#camFS .fsx, #camFSbar, #camZoomBadge, #camSel { transition: opacity .25s; } #camFS.uihide .fsx, #camFS.uihide #camFSbar, #camFS.uihide #camZoomBadge, #camFS.uihide #camSel { opacity:0 !important; pointer-events:none !important; }';
+  document.head.appendChild(css);
+  function ms() { return +window.__camUiMs || 8000; }
+  function typing() { var a = document.activeElement; return a && a.closest && a.closest('#camFSbar') && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName); }
+  function hide() { var fs = $('camFS'); if (!fs) return; clearTimeout(timer); timer = null; hidden = true; fs.classList.add('uihide'); }
+  function arm() { clearTimeout(timer); timer = setTimeout(function () { if (typing()) arm(); else hide(); }, ms()); }
+  function show() { var fs = $('camFS'); if (!fs) return; hidden = false; fs.classList.remove('uihide'); arm(); }
+  function isOpen(fs) { return !!fs && getComputedStyle(fs).display !== 'none'; }
+  document.addEventListener('DOMContentLoaded', function () {
+    var fs = $('camFS'); if (!fs) return;
+    setInterval(function () {                                                                  // kamera tam ekranı açılanda yazılar görünsün, sonra gizlənsin
+      var o = isOpen(fs); if (o && !wasOpen) show(); if (!o && wasOpen) { clearTimeout(timer); fs.classList.remove('uihide'); hidden = false; } wasOpen = o;
+    }, 250);
+    var bar = $('camFSbar');
+    ['pointerdown', 'input', 'focusin', 'touchmove', 'scroll', 'click'].forEach(function (ev) { if (bar) bar.addEventListener(ev, function () { if (!hidden) arm(); }, true); });
+    var pc = 0;
+    fs.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('#camFSbar,#camZoomBadge,#camSel,.fsx')) { if (!hidden) arm(); return; }
+      pc++; tap = pc === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), ok: true } : null;   // ikinci barmaq = pinch, toxunuş sayılmır
+    }, true);
+    fs.addEventListener('pointermove', function (e) { if (tap && tap.id === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 14) tap.ok = false; }, true);
+    function up(e) {
+      var t = tap; if (pc > 0) pc--; if (pc === 0) tap = null;
+      if (t && t.id === e.pointerId && t.ok && e.type === 'pointerup' && Date.now() - t.t < 400) { if (hidden) show(); else hide(); }
+    }
+    fs.addEventListener('pointerup', up, true); fs.addEventListener('pointercancel', function (e) { tap = null; if (pc > 0) pc--; }, true);
+  });
+})();
+</script>
 <script>window.onerror=function(m,s,l){var n=document.getElementById("note");if(n)n.textContent="JS xəta: "+m+" (sətir "+l+")";};</script>
 <div id="camFS">
   <video id="camFSv" autoplay playsinline muted></video><canvas id="camFSc"></canvas>
