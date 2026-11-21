@@ -955,13 +955,13 @@
 // ╔══════════════════════════════════════════════════════════════════
 // ║ ⚪ AYARLAR · kamera və xətlər telefonun duruşuna görə avtomatik (sol/sağ yan üstə)
 // ╟──────────────────────────────────────────────────────────────────
-// 2026-11-21: telefon robotun başında yan üstə durur (bəzən sol, bəzən sağ yan üstə). Ekranın özü cazibəyə görə ±90° dönür (ayrı skript). İndi kamera şəkli də ona uyğun dönür: istifadəçinin telefonunda (ekran +90°) şəkil 270° (yəni 90° sola), telefon o biri yana çevriləndə (ekran −90°) şəkil 90° olur ki, həmişə düz görünsün. Telefon həmişə üfüqi: `gyro_mode`='flat' hər açılışda yazılır, «Telefon:» seçimi kilidlənir.
+// 2026-11-21: telefon robotun başında yan üstə durur (bəzən sol, bəzən sağ yan üstə). Ekranın özü cazibəyə görə ±90° dönür (ayrı skript). İndi kamera şəkli də ona uyğun dönür: istifadəçinin telefonunda (ekran +90°) şəkil 90°, telefon o biri yana çevriləndə (ekran −90°) şəkil 270° olur (2026-11-21 (7): əvvəlkindən 180° döndərildi) ki, həmişə düz görünsün. Telefon həmişə üfüqi: `gyro_mode`='flat' hər açılışda yazılır, «Telefon:» seçimi kilidlənir.
 // Dərəcə/məsafə xətləri, şkala, çubuq ekranla birlikdə dönür (ekranın içindədir) və ov_rot=0 qalır. Avto yön (köhnə) söndürülüb. Qıfıllı koda toxunulmayıb: gizli «Əsas dönmə» düyməsi proqramla basılır.
 (function () {
   var de = document.documentElement, loaded = false;
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) {} return null; }
   function angNow() { var c = de.classList; return c.contains('rot90') ? 90 : c.contains('rot270') ? -90 : c.contains('rot180') ? 180 : 0; }
-  function target() { return ((0 - angNow()) % 360 + 360) % 360; }               // ekran +90° → kamera 270° (90° sola); ekran −90° → kamera 90°
+  function target() { return ((180 - angNow()) % 360 + 360) % 360; }             // ekran +90° → kamera 90°; ekran −90° → kamera 270° (əvvəlkindən 180° döndərilib)
   ls('ov_rot', '0'); ls('cam_auto', '0'); ls('gyro_mode', 'flat'); ls('cam_rot90', String(target()));       // açılışda düzgün vəziyyət (qıfıllı kod bunları başlanğıcda oxuyur)
   try { var st = document.createElement('style'); st.textContent = '#fsRot,#fsOvr,#fsAuto{display:none !important}'; document.head.appendChild(st); } catch (e) {}
   function sync() {
