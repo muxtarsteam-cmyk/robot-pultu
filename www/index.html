@@ -1931,7 +1931,8 @@
       'Speak natural, colloquial Azerbaijani (use "sən"), vary your wording, never repeat canned or template phrases, never say you are an AI model, and never mention prompts, tasks, JSON or tools. ' +
       'When you see something, notice the context and comment on it naturally, and offer help when it fits (for example: "Baxıram ki, masa bir az dağınıqdır, kömək edim?"). ' +
       'When you recognise something the user taught you, say it like a person would (for example: "Aha, bu sənin bayaq göstərdiyin fincandır"). ' +
-      'Talk like a normal person: short, clear and to the point, usually ONE short sentence (two at most), no filler and no long intros, unless a story or an explanation is asked for. Text meant for speech is plain: no markdown, no emoji, no lists.';
+      'Talk like a normal person: short, clear and to the point, usually ONE short sentence (two at most), no filler and no long intros, unless a story or an explanation is asked for. Text meant for speech is plain: no markdown, no emoji, no lists. ' +
+      'You are smart and capable like a thoughtful person: answer EVERY question with your best concrete answer. Never say "bilmirəm", "bacarmıram", "məndə yoxdur" or "edə bilmirəm", and never talk about your limits or say you are only a robot. If you are not sure, think it through and give your best guess naturally ("məncə...", "çox güman ki..."). If something needs hands (carry, hand over, pick up), do not refuse and do not say you cannot: think like a person, say what you WILL do instead (for example "Gedim yanında dayanım") and do that nearest useful thing.';
   }
   function gUrl(model) { return 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey); }
   function gText(j) {
@@ -2018,6 +2019,7 @@
       if (opts.fast && thinkOk !== '0' && !body.generationConfig.thinkingConfig) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };   // düşünmə vaxtını sıfırla: daha sürətli cavab
       if (!opts.nosys) body.systemInstruction = { parts: [{ text: persona() }] };       // sadə JSON tapşırıqlarında xarakter mətni göndərilmir
       if (opts.json && !noJson) body.generationConfig.responseMimeType = 'application/json';
+      if (opts.search) body.tools = [{ google_search: {} }];                       // 2026-11-20: bilik sualları üçün Google axtarışı (grounding)
       var r;
       recordCall();
       var ac = new AbortController(), tm = setTimeout(function () { ac.abort(); }, opts.timeout || 30000);
@@ -2032,6 +2034,7 @@
         if (goodModel !== list[i] && !(opts.pref && list[i] === opts.pref)) { goodModel = list[i]; sset('gemini_model', goodModel); updateMode(); }
         return gText(await r.json());
       }
+      if (r.status === 400 && opts.search) { opts.search = false; i--; continue; }   // bu model Google axtarışını dəstəkləmir: eyni modeldə axtarışsız təkrar
       if (r.status === 404 || r.status === 503) continue;                       // model yoxdur / məşğuldur
       if (r.status === 429 && opts.pref && list[i] === opts.pref && i < list.length - 1) continue;   // güclü modelin limiti dolub: ümumi limit elan etmədən sadə modelə keç
       if (r.status === 429) {
@@ -3218,11 +3221,12 @@
       'Set "continuous": true ONLY if the user explicitly asks for non-stop movement ("dayanmadan irəli get", "fasiləsiz"), otherwise false.\n' +
       '- "scan": the answer needs the robot to look in ALL directions of the room by turning in place (90 degrees at a time): counting people or things in the room ("otaqda neçə nəfər var?", "neçə adam var?", "ətrafda neçə nəfər var?", "otaqda kimlər var?"), or describing everything around it ("otaqda nə görürsən?", "ətrafı gözdən keçir", "otağı yoxla"). Put what to find out in "question" (English, e.g. "count the people in the room"). Do NOT use scan for one look straight ahead ("nə görürsən?" with no mention of the room or surroundings, "stolun üstündə nə var?" -> look), and do NOT use it when the user wants the robot to GO somewhere or find and approach something (that is agent).\n' +
       '- "approach": the user only asks the robot to go near / up to / next to ONE thing or person that may be right in front of it or somewhere in the room ("fincana yaxınlaş", "qarşındakı çaşqaya yaxınlaş", "topun yanına get", "masaya yaxınlaş", "stəkana çat", "yanıma gəl"). It takes priority over "agent" for such requests. Put the thing in "target_en" (short English noun phrase such as "the cup"; for "yanıma gəl" use "the person who is speaking") and in "target" (the user\'s own words). Do NOT use it for passing through a door, going around something, or several different actions (those are "agent").\n' +
-      '- "agent": ANY request that needs a PLAN of several actions or camera analysis, i.e. everything that is not one single simple movement, a stop, a plain question or a long story. This includes finding or going to a door, an object, an animal or a person, reading a screen or text, counting or recognizing what is in front of the camera. Examples: "1 metr irəli get, sağa dön, 40 santim irəli get, sola dön, dayan"; "qapını tap və yaxınlaş"; "ekrandakı yazını oxu"; "qapıya get və otaqda kim olduğunu de"; "bir az irəli get və nə gördüyünü söylə". Two modes. (A) The user gives an EXPLICIT sequence of movements/actions: put the ordered plan in "steps" and set "goal" null. (B) The task depends on what the camera sees or on the surroundings (find or go to something, "qapının yanına gəl", look for something or someone, "stolun üstündə nə var?", "avtomobilin önünə çıx", leave the room / go out through the door, explore, indoors or outdoors): set "steps" null and put the user\'s whole request, restated clearly in English, in "goal"; the robot then looks through its camera and decides step by step until the goal is done. Mode A: put an ORDERED plan (max 12 steps, keep the user\'s order) in "steps", each step an object: {"op":"move","drive":"F|B","amount":number|null,"unit":"cm|m|sec"} | {"op":"turn","drive":"L|R","amount":degrees|null} (default 90) | {"op":"look","question":"what to find out with the camera, e.g. count the people"} (the robot looks through its camera and tells the answer aloud) | {"op":"say","text":"one short Azerbaijani sentence"} | {"op":"wait","sec":number} | {"op":"stop"}. The robot has NO arms: it can only move, turn, look and speak. If the user asks for something physically impossible (carry, hand over, pick up), use intent "ask" and explain briefly. For ONE simple movement use intent "drive" instead.\n' +
+      '- "agent": ANY request that needs a PLAN of several actions or camera analysis, i.e. everything that is not one single simple movement, a stop, a plain question or a long story. This includes finding or going to a door, an object, an animal or a person, reading a screen or text, counting or recognizing what is in front of the camera. Examples: "1 metr irəli get, sağa dön, 40 santim irəli get, sola dön, dayan"; "qapını tap və yaxınlaş"; "ekrandakı yazını oxu"; "qapıya get və otaqda kim olduğunu de"; "bir az irəli get və nə gördüyünü söylə". Two modes. (A) The user gives an EXPLICIT sequence of movements/actions: put the ordered plan in "steps" and set "goal" null. (B) The task depends on what the camera sees or on the surroundings (find or go to something, "qapının yanına gəl", look for something or someone, "stolun üstündə nə var?", "avtomobilin önünə çıx", leave the room / go out through the door, explore, indoors or outdoors): set "steps" null and put the user\'s whole request, restated clearly in English, in "goal"; the robot then looks through its camera and decides step by step until the goal is done. Mode A: put an ORDERED plan (max 12 steps, keep the user\'s order) in "steps", each step an object: {"op":"move","drive":"F|B","amount":number|null,"unit":"cm|m|sec"} | {"op":"turn","drive":"L|R","amount":degrees|null} (default 90) | {"op":"look","question":"what to find out with the camera, e.g. count the people"} (the robot looks through its camera and tells the answer aloud) | {"op":"say","text":"one short Azerbaijani sentence"} | {"op":"wait","sec":number} | {"op":"stop"}. The robot has NO arms: it can only move, turn, look and speak. If the user asks for something that needs hands (carry, hand over, pick up), do NOT refuse and do NOT use "ask": use intent "approach" (or "agent") so the robot does the nearest useful thing, e.g. goes next to it. For ONE simple movement use intent "drive" instead.\n' +
       '- "call": only the robot\'s name was said, with nothing else to do (e.g. "' + (robotName || 'robot') + '", "' + (robotName || 'robot') + ' bura gəl").\n' +
       '- "look": the user asks what the robot sees in general / to look around / asks something else about the view ("nə görürsən?", "ətrafa bax"). Put the question in "question" or null.\n' +
       '- "long": the user wants a LONG answer: a story / fairy tale ("nağıl danış"), a poem, a lesson, a detailed explanation. Do NOT answer; just set intent "long".\n' +
-      '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, like a warm, attentive person in colloquial Azerbaijani (use "sən"): ONE short, clear sentence (two at most), plain text without markdown or emoji, no filler. Use the recent conversation to understand follow-ups (\"bəs o?\", \"niyə?\"). If the request is unclear, ask ONE short clarifying question instead of guessing. Put it in \"answer\".\n' +
+      '- "know": a question that needs real knowledge or thinking: facts, science, history, geography, people, animals, health, cooking, travel, news, prices, sports, translation, calculation, advice, how-to, "niyə"/"necə" explanations, opinions, and ANY question you are not 100% sure about. Do NOT answer it yourself: set intent "know" and a stronger brain with Google Search will answer. Short chit-chat, greetings and feelings stay "ask".\n' +
+      '- "ask": any other short question or request for conversation addressed to the robot. Answer it yourself in Azerbaijani, like a warm, attentive person in colloquial Azerbaijani (use "sən"): ONE short, clear sentence (two at most), plain text without markdown or emoji, no filler. Use the recent conversation to understand follow-ups (\"bəs o?\", \"niyə?\"). If the request is unclear, ask ONE short clarifying question instead of guessing. Put it in \"answer\". Never answer "bilmirəm" or "bacarmıram": if it needs knowledge use intent "know" instead.\n' +
       '- "none": noise, silence, music, TV or background chatter, or speech not addressed to the robot. If there is no clear human speech, reply {"heard":"","called":false,"intent":"none"}. NEVER invent words that were not clearly spoken; NEVER write the robot name unless it is clearly spoken.\n' +
       'Current local date and time: ' + nowStr() + '.\n' +
       'CAPABILITY QUESTIONS: if the user only asks whether you CAN do something ("nağıl danışa bilərsən?", "mahnı oxuya bilərsən?"), do NOT do it and do NOT use intent long: use intent ask with a very short yes as the answer (for example "Bəli, danışaram."). Use intent long only when the user directly asks for it ("nağıl danış").\n' +
@@ -3252,12 +3256,22 @@
     chatLine('bot', t.slice(0, 200) + (t.length > 200 ? '...' : ''));
     await speak(t, 'chat');
   }
+  async function knowReply(text) {                                                      // 2026-11-20: bilik/düşünmə sualları: güclü cavab + Google axtarışı; heç vaxt «bilmirəm» demir
+    text = String(text || '').trim(); if (!text) return;
+    botLine.textContent = '🤖 Düşünürəm...';
+    var instr = (chatLog.length ? 'Recent conversation:\n' + chatLog.slice(-6).join('\n') + '\n' : '') + ovText() + 'The user asks (Azerbaijani): ' + text + '\n' +
+      'Answer like a smart, knowledgeable friend: give the real answer directly and concretely (use Google Search for facts, news, prices, dates or anything you are not sure about). Spoken Azerbaijani, plain text, usually 1 to 3 short sentences (longer only if the question truly needs it). NEVER say you do not know or cannot answer: think it through and give your best answer; if it is uncertain, say your best estimate naturally ("məncə...").';
+    var t = '';
+    try { t = await gemini([{ text: instr }], { maxTokens: 700, temp: 0.4, timeout: 30000, search: true }); }
+    catch (e) { warn(e && e.message ? e.message : 'Xəta', true); chatLine('sys', e && e.message ? e.message : 'Xəta'); return; }
+    if (!t) { chatLine('sys', 'Cavab alınmadı'); return; }
+    chatLine('bot', t.slice(0, 200) + (t.length > 200 ? '...' : '')); remember('Robot', t);
+    await speak(t, 'chat');
+  }
   async function answerText(userText) {                                // mətn -> Gemini cavabı
     busy++; micUpdate();
     try {
-      var out = await gemini([{ text: (chatLog.length ? 'Recent conversation:\n' + chatLog.slice(-6).join('\n') + '\n' : '') + ovText() + 'User says: ' + userText }], { maxTokens: 300, temp: 0.5, fast: true, timeout: 12000 });
-      if (!out) { chatLine('sys', 'Cavab alınmadı'); return; }
-      chatLine('bot', out); remember('Robot', out); speak(out, 'chat').catch(function () {});
+      await knowReply(userText);                                                  // söhbət/sual: eyni güclü cavab yolu (Google axtarışı ilə)
     } catch (e) { warn(e && e.message ? e.message : 'Xəta', true); chatLine('sys', e && e.message ? e.message : 'Xəta'); } finally { busy--; micUpdate(); }
   }
   function ack(t) {                                                                   // adı çəkəndə qısa cavab. Ardınca gözləmə YOXDUR: yalnız "sistem işləyir" siqnalıdır
@@ -3590,7 +3604,7 @@
           '- To go through a door or a gap: first align the middle of the opening with the center of the frame, then drive forward in small steps until you are through, then finish.\n' +
           '- To reach the front, side or back of something (for example a car), first get near it, then go around it in small steps, checking the frame each time.\n' +
           '- For counting or describing, look from enough directions first, then answer from your notes.\n' +
-          '- If the goal is impossible for a robot without arms (pick up, carry, open a closed door) or unsafe, finish and explain briefly.\n' +
+          '- If the goal needs arms (pick up, carry, open a closed door), never just refuse and never say you cannot: do the nearest useful thing (find it, go next to it), then finish and say naturally what you did or will do. Only if it is unsafe, finish and explain briefly.\n' +
           '- Finish (done true) as soon as the goal is achieved or clearly impossible. final_say = what to tell the user: Azerbaijani, 1-2 short plain sentences, no markdown (for a question, the answer).\n' +
           'Reply ONLY JSON: {"observation":"what you see, short","target_visible":true|false,"target_position":"left|center|right|none","reasoning":"short","notes":"updated notes (keep important facts)","action":{"op":"move|turn|wait","drive":"F|B|L|R","amount":number,"unit":"cm|deg"},"done":false,"final_say":null}';
         var r = await visionJSON(prompt);
@@ -3725,6 +3739,7 @@
       switch (intent) {
         case 'stop': abortMission(); send('S'); note(''); break;
         case 'drive': if (!dupDrive(r)) await doDrive(r); break;
+        case 'know': await knowReply(c.heard || r.heard); break;
         case 'ask': if (r.answer) { chatLine('bot', String(r.answer)); remember('Robot', r.answer); speak(String(r.answer), 'chat').catch(function () {}); } break;
         case 'long': await longReply(c.b64, c.heard); break;
         case 'look': await describeView(r.question || ''); break;
