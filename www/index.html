@@ -976,6 +976,59 @@
 // #endregion
 </script>
 <script>
+// #region ⚪ SƏS · «qarşında kim var / kimi görürsən / tanıyırsan» → kamera açılır
+// ╔══════════════════════════════════════════════════════════════════
+// ║ ⚪ SƏS · «qarşında kim var / kimi görürsən / tanıyırsan» → kamera açılır
+// ╟──────────────────────────────────────────────────────────────────
+// 2026-11-21: problem: «nə görürsən / əlimdə nə var» kameranı açırdı, amma insan haqqında sual («bax gör qarşında kim dayanıb», «qarşında duran şəxsi tanıyırsan») kameraya getmirdi (Gemini marşrutlaşdırıcısı onu «ask»/«agent»/«none» sayıb kamerasız cavab verirdi).
+// Qıfıllı koda toxunulmayıb. Gemini marşrutlaşdırıcısının cavabı (TASK:ROUTER) yoldan keçəndə, istifadəçinin cümləsi insan/əşya görmə sualıdırsa və hərəkət sözü yoxdursa, niyyət «look» edilir və sual insanı təsvir etməyə yönəldilir. Qıfıllı kod onu həmişəki kimi icra edir (kamera tam ekran açılır, baxır, danışır).
+// 2026-11-21 (2): əşya və canlı sualları da əlavə edildi («nə görürsən», «qarşında nə var», «bu nədir», «əlimdə nə var», «qarşında heyvan var?»).
+// Dürüst qeyd: Gemini üzdən kimin kim olduğunu tanımır. «Tanıyırsan?» sualında robot bunu dürüst deyir və insanı təsvir edir (cins, təxmini yaş, geyim, nə edir).
+(function () {
+  var of = window.fetch; if (!of) return;
+  function asc(t) { return String(t || '').toLowerCase().replace(/\u0307/g, '').replace(/ə/g, 'e').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  var MOVE = /\b(get|gel|gelin|yaxinlas|yaxinlasin|don|dondur|tap|axtar|cix|irele|geri|arxaya|saga|sola|stop|otaqda|otagi|etrafda|etrafi|nece)\b/;
+  var CTX = /\b(qarsinda|qarsindaki|qarsimda|qabaqda|onunde|dayanib|durur|dayanir|dayanan|duran|gorursen|gorursunuz|gorunur|bax|gor)\b/;
+  function kind(t) {                                   // 'person' | 'object' | ''
+    var n = asc(t); if (!n || MOVE.test(n)) return '';
+    if (/\bkim(i|in|dir|ler|leri|lerdir)?\b/.test(n) && CTX.test(n)) return 'person';
+    if (/\btani(yirsan|yirsiz|ya bilersen|san|sanmi)\b/.test(n) && /\b(sexsi|sexs|sexse|adami|adam|insani|insan|onu|bunu|meni|qarsinda|dayanan|duran|kimdir|kisini|qadini)\b/.test(n)) return 'person';
+    if (/\bqarsinda\b.*\b(sexs|sexsi|adam|adami|insan|kisi|qadin|usaq)\b.*\b(var|gorursen|gorunur)\b/.test(n)) return 'person';
+    if (/\bkimse\b/.test(n) && CTX.test(n)) return 'person';
+    if (/\bne (gorursen|gorursunuz|gorunur)\b/.test(n)) return 'object';
+    if (/\bne var\b/.test(n) && /\b(qarsinda|qarsimda|qabaqda|onunde|elimde|ustunde|bax|gor)\b/.test(n)) return 'object';
+    if (/\bnedir\b/.test(n) && /\b(bu|elimdeki|qarsindaki|qarsinda|dayanan|duran|bax|gor)\b/.test(n)) return 'object';
+    if (/\bne (esya|sey|heyvan|canli)\b|\bhansi (esya|sey|heyvan|canli)\b/.test(n) && /\b(var|gorursen|gorunur|tutmusam)\b/.test(n)) return 'object';
+    if (/\b(heyvan|canli|pisik|qus|usaq)\b/.test(n) && /\b(var|gorursen|gorunur)\b/.test(n) && CTX.test(n)) return 'object';
+    if (/\bne reng(dir)?\b/.test(n) && /\b(elimde|qarsinda|qarsindaki|bu)\b/.test(n)) return 'object';
+    return '';
+  }
+  var GUIDE = ' (Look at the people in the frame. Say how many people and describe each one briefly: man, woman or child, approximate age, clothes, what they are doing. You cannot recognize who a person is by face; if asked whether you know them, say honestly that you cannot recognize people by face. If nobody is visible, say nobody is in front of you.)';
+  function userText(body) { try { var j = JSON.parse(body), tx = j.contents[0].parts[0].text, m = /User said: ("(?:[^"\\]|\\.)*")\s*$/.exec(tx); return m ? JSON.parse(m[1]) : ''; } catch (e) { return ''; } }
+  function parseJ(t) { t = String(t || '').replace(/```json|```/gi, '').trim(); try { return JSON.parse(t); } catch (e) {} var a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e2) {} } return null; }
+  window.__personKind = kind;
+  window.fetch = function (url, init) {
+    var p = of.apply(this, arguments), heard = '';
+    try { if (String(url).indexOf('generativelanguage.googleapis.com') < 0 || !init || typeof init.body !== 'string' || init.body.indexOf('TASK:ROUTER') < 0) return p; heard = userText(init.body); } catch (e) { return p; }
+    var k = kind(heard); if (!k) return p;
+    return p.then(function (resp) {
+      if (!resp || !resp.ok) return resp;
+      return resp.clone().json().then(function (j) {
+        var txt = j.candidates[0].content.parts.map(function (x) { return x.text || ''; }).join('').trim(), r = parseJ(txt);
+        if (!r) return resp;
+        var it = String(r.intent || 'none');
+        if (it === 'stop' || it === 'drive' || it === 'scan' || it === 'long') return resp;               // hərəkət/dayan/otaq skanı/nağıl: toxunulmur
+        r.intent = 'look'; r.question = String(heard).replace(/"/g, "'") + (k === 'person' ? GUIDE : ''); r.answer = null; r.steps = null; r.goal = null; r.drive = null; r.target = null; r.target_en = null;
+        j.candidates[0].content.parts = [{ text: JSON.stringify(r) }];
+        return new Response(JSON.stringify(j), { status: resp.status, statusText: resp.statusText, headers: { 'Content-Type': 'application/json' } });
+      }).catch(function () { return resp; });
+    });
+  };
+})();
+// ╚══ ⚪ SƏS SONU
+// #endregion
+</script>
+<script>
 
 
 
