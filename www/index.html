@@ -1029,6 +1029,128 @@
 // #endregion
 </script>
 <script>
+// #region ⚪ SƏS · hava məlumatı və yerin (konumun) təsviri
+// ╔══════════════════════════════════════════════════════════════════
+// ║ ⚪ SƏS · hava məlumatı və yerin (konumun) təsviri
+// ╟──────────────────────────────────────────────────────────────────
+// 2026-11-21: istifadəçi tələbi: robotun adını çəkib «bugün hava necə olacaq?», «sabah hava necədir?», «harada dayanmısan?» desə, robot (1) olduğu yerin havasını (aydın/yağışlı/küləkli, temperatur) və (2) olduğu yeri (rayon, küçə, yaxındakı mağaza/bina) desin.
+// Qıfıllı koda toxunulmayıb. Gemini marşrutlaşdırıcısının (TASK:ROUTER) cavabı yoldan keçəndə, cümlə hava/yer sualıdırsa və hərəkət sözü yoxdursa, niyyət «ask» edilir, «answer» sahəsinə hazır cavab yazılır. Qıfıllı kod onu həmişəki kimi səsləndirir.
+// Mənbələr (pulsuz, açarsız): telefonun GPS-i (ACCESS_FINE_LOCATION artıq başlanğıcda soruşulur), Open-Meteo (hava), OpenStreetMap Nominatim (ünvan), Overpass (yaxındakı adlı yer). GPS yoxdursa IP üzrə təxmini şəhər. Hər hansı mənbə cavab verməsə, köhnə yol (Gemini + Google axtarışı) işləyir.
+(function () {
+  var of = window.fetch; if (!of) return;
+  function asc(t) { return String(t || '').toLowerCase().replace(/\u0307/g, '').replace(/ə/g, 'e').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  var MOVE = /\b(get|gel|gelin|yaxinlas|yaxinlasin|don|dondur|tap|axtar|cix|irele|geri|arxaya|saga|sola|stop)\b/;
+  function kinds(t) {
+    var n = asc(t), w = false, l = false; if (!n || MOVE.test(n)) return { w: false, l: false, tom: false };
+    if (/\bhava\b/.test(n) && /\b(necedir|nece|olacaq|olur|yagis|yagmur|kulek|temperatur|derece|isti|soyuq|qar|bugun|sabah|indi|hazirda|yagacaq|durumu|haqqinda|melumat|nedir)\b/.test(n)) w = true;
+    if (/\b(yagis|yagmur|qar)\b/.test(n) && /\b(yagacaq|olacaq|var|yagir|yagarmi|olarmi)\b/.test(n)) w = true;
+    if (/\b(kenarda|bayirda|disarida)\b/.test(n) && /\b(derece|isti|soyuq|yagis|yagmur)\b/.test(n)) w = true;
+    if (/\btemperatur\b/.test(n) || /\bnece derece\w*\b/.test(n)) w = true;
+    if (/\b(harada|harda|hardasan|haradasan|haradasiniz|hardasiniz)\b/.test(n) && /\b(sen|san|dayan\w*|dur\w*|yerles\w*|olursan|oldugun|haradasan|hardasan|haradasiniz|hardasiniz)\b/.test(n)) l = true;
+    if (/\b(konumun|konumunu|konum|yerini|yerin|unvanin|unvanini|oldugun yer|dayandigin yer)\b/.test(n) && /\b(de|soyle|nedir|haradir|hardir|bil|goster|hara)\b/.test(n)) l = true;
+    if (/\bhansi \w*(erazi|seher|rayon|unvan|kuce|prospekt|bina|magaza|mekan|yer)\w*(sen|san|siniz)\b/.test(n)) l = true;
+    return { w: w, l: l, tom: /\bsabah\b/.test(n), now: /\b(indi|hazirda)\b/.test(n) };
+  }
+  window.__weatherKind = kinds;
+  function userText(body) { try { var j = JSON.parse(body), tx = j.contents[0].parts[0].text, m = /User said: ("(?:[^"\\]|\\.)*")\s*$/.exec(tx); return m ? JSON.parse(m[1]) : ''; } catch (e) { return ''; } }
+  function parseJ(t) { t = String(t || '').replace(/```json|```/gi, '').trim(); try { return JSON.parse(t); } catch (e) {} var a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e2) {} } return null; }
+  function jget(url, ms) {
+    return new Promise(function (res) {
+      var done = false, ac = (typeof AbortController !== 'undefined') ? new AbortController() : null, tm = setTimeout(function () { if (!done) { done = true; try { if (ac) ac.abort(); } catch (e) {} res(null); } }, ms || 6000);
+      of(url, ac ? { signal: ac.signal } : undefined).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (!done) { done = true; clearTimeout(tm); res(j); } }).catch(function () { if (!done) { done = true; clearTimeout(tm); res(null); } });
+    });
+  }
+  var lastPos = null;
+  function getPos() {
+    return new Promise(function (res) {
+      if (lastPos && Date.now() - lastPos.t < 120000) return res(lastPos.c);
+      if (!navigator.geolocation) return res(null);
+      var done = false, tm = setTimeout(function () { if (!done) { done = true; res(null); } }, 9000);
+      try {
+        navigator.geolocation.getCurrentPosition(function (p) { if (done) return; done = true; clearTimeout(tm); lastPos = { c: { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, gps: true }, t: Date.now() }; res(lastPos.c); },
+          function () { if (done) return; done = true; clearTimeout(tm); res(null); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 });
+      } catch (e) { if (!done) { done = true; clearTimeout(tm); res(null); } }
+    });
+  }
+  async function getLoc() {
+    var c = await getPos(); if (c) return c;
+    var ip = await jget('https://ipapi.co/json/', 5000);
+    if (ip && ip.latitude != null) return { lat: +ip.latitude, lon: +ip.longitude, acc: 5000, gps: false, city: ip.city || '' };
+    return null;
+  }
+  function wmo(c) { var m = { 0: 'aydın', 1: 'əsasən aydın', 2: 'az buludlu', 3: 'buludlu', 45: 'dumanlı', 48: 'dumanlı', 51: 'yüngül çiskinli', 53: 'çiskinli', 55: 'güclü çiskinli', 56: 'dondurucu çiskinli', 57: 'dondurucu çiskinli', 61: 'yüngül yağışlı', 63: 'yağışlı', 65: 'güclü yağışlı', 66: 'dondurucu yağışlı', 67: 'dondurucu yağışlı', 71: 'yüngül qarlı', 73: 'qarlı', 75: 'güclü qarlı', 77: 'qar dənəli', 80: 'sağanaqlı yağışlı', 81: 'sağanaqlı yağışlı', 82: 'güclü sağanaqlı', 85: 'qar sağanaqlı', 86: 'güclü qar sağanaqlı', 95: 'ildırımlı', 96: 'dolulu və ildırımlı', 99: 'güclü dolulu və ildırımlı' }; return m[c] || 'dəyişkən'; }
+  function isRainCode(c) { return (c >= 51 && c <= 67) || (c >= 80 && c <= 82) || c >= 95; }
+  async function weatherText(c, tom, now) {
+    var u = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(4) + '&longitude=' + c.lon.toFixed(4) + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max&timezone=auto&forecast_days=2&wind_speed_unit=kmh';
+    var j = await jget(u, 6000); if (!j || !j.daily || !j.current) return '';
+    var d = j.daily, k = tom ? 1 : 0, cur = j.current, R = Math.round;
+    var tmin = R(d.temperature_2m_min[k]), tmax = R(d.temperature_2m_max[k]), p = d.precipitation_probability_max ? R(d.precipitation_probability_max[k] || 0) : 0, wd = R(d.wind_speed_10m_max[k] || 0), g = R(d.wind_gusts_10m_max[k] || 0), code = d.weather_code[k];
+    var out = [];
+    if (!tom) out.push('Hazırda hava ' + wmo(cur.weather_code) + ', ' + R(cur.temperature_2m) + ' dərəcə' + (Math.abs(cur.apparent_temperature - cur.temperature_2m) >= 3 ? ', özünü ' + R(cur.apparent_temperature) + ' kimi hiss olunur' : '') + '.');
+    if (!now || tom) {
+      out.push((tom ? 'Sabah' : 'Bu gün') + ' hava ' + wmo(code) + ' olacaq, temperatur ' + tmin + ' ilə ' + tmax + ' dərəcə arasında.');
+      out.push((p >= 50 || isRainCode(code)) ? 'Yağış gözlənilir, ehtimal ' + p + ' faiz.' : (code >= 71 && code <= 86 ? '' : 'Yağış gözlənilmir, quru olacaq.'));
+    }
+    out.push(g >= 60 ? 'Çox güclü külək olacaq, zərbələr saatda ' + g + ' km-ə qədər.' : (g >= 45 || wd >= 30) ? 'Güclü külək olacaq, saatda ' + (wd >= 30 ? wd : g) + ' km-ə qədər.' : wd >= 15 ? 'Yüngül külək olacaq.' : 'Külək zəif olacaq.');
+    if (tmax >= 33) out.push('Çox isti olacaq, su içməyi unutma.'); else if (tmax <= 0) out.push('Şaxta olacaq, isti geyin.');
+    return out.filter(Boolean).join(' ');
+  }
+  var TYPES = { clothes: ['mağaza', 'mağazanın'], shoes: ['mağaza', 'mağazanın'], supermarket: ['supermarket', 'supermarketin'], convenience: ['market', 'marketin'], mall: ['ticarət mərkəzi', 'ticarət mərkəzinin'], restaurant: ['restoran', 'restoranın'], cafe: ['kafe', 'kafenin'], fast_food: ['fast food', 'fast foodun'], bank: ['bank', 'bankın'], pharmacy: ['aptek', 'aptekin'], hospital: ['xəstəxana', 'xəstəxananın'], clinic: ['klinika', 'klinikanın'], school: ['məktəb', 'məktəbin'], university: ['universitet', 'universitetin'], fuel: ['yanacaq stansiyası', 'yanacaq stansiyasının'], hotel: ['otel', 'otelin'], mosque: ['məscid', 'məscidin'], park: ['park', 'parkın'], cinema: ['kinoteatr', 'kinoteatrın'], bakery: ['çörək mağazası', 'çörək mağazasının'], hairdresser: ['bərbər', 'bərbərin'], electronics: ['elektronika mağazası', 'elektronika mağazasının'], mobile_phone: ['telefon mağazası', 'telefon mağazasının'], jewelry: ['zərgərlik mağazası', 'zərgərlik mağazasının'] };
+  function dist(a, b, c, d) { var R = 6371000, x = (d - b) * Math.PI / 180 * Math.cos((a + c) / 2 * Math.PI / 180), y = (c - a) * Math.PI / 180; return Math.sqrt(x * x + y * y) * R; }
+  async function placeText(c) {
+    var q = '[out:json][timeout:6];(nwr(around:45,' + c.lat + ',' + c.lon + ')["shop"]["name"];nwr(around:45,' + c.lat + ',' + c.lon + ')["amenity"]["name"];nwr(around:45,' + c.lat + ',' + c.lon + ')["tourism"]["name"];nwr(around:45,' + c.lat + ',' + c.lon + ')["office"]["name"];nwr(around:45,' + c.lat + ',' + c.lon + ')["building"]["name"];);out center 20;';
+    var res = await Promise.all([
+      jget('https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=az,en&lat=' + c.lat + '&lon=' + c.lon, 6000),
+      c.gps ? jget('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(q), 7000) : Promise.resolve(null)]);
+    var nm = res[0], ov = res[1], a = (nm && nm.address) || {}, parts = [];
+    var city = a.city || a.town || a.village || a.municipality || c.city || '';
+    if (city) parts.push(/şəhər|rayon/i.test(city) ? city : city + ' şəhəri');
+    var dis = a.city_district || a.suburb || a.neighbourhood || a.quarter || ''; if (dis && dis !== city) parts.push(dis);
+    if (a.road) parts.push(a.road + (a.house_number ? ' ' + a.house_number : ''));
+    var poi = null;
+    if (ov && ov.elements) ov.elements.forEach(function (e) {
+      var la = e.lat != null ? e.lat : (e.center && e.center.lat), lo = e.lon != null ? e.lon : (e.center && e.center.lon); if (la == null || !e.tags || !e.tags.name) return;
+      var dd = dist(c.lat, c.lon, la, lo); if (!poi || dd < poi.d) poi = { n: e.tags.name, d: dd, t: e.tags };
+    });
+    var s = parts.length ? parts.join(', ') : '';
+    if (!s && nm && nm.display_name) s = String(nm.display_name).split(',').slice(0, 3).join(',');
+    if (!s) return '';
+    var ty = poi ? (TYPES[poi.t.shop] || TYPES[poi.t.amenity] || TYPES[poi.t.tourism] || null) : null;
+    var txt = (c.gps ? 'Hazırda ' : 'Dəqiq GPS yeri ala bilmədim, internet üzrə təxminən ') + s + ' ərazisindəyəm.';
+    if (poi) {
+      if (poi.d <= 25) txt += ty ? ' Deyəsən ' + poi.n + ' adlı ' + ty[1] + ' olduğu binadayam.' : ' Deyəsən ' + poi.n + ' yerləşən binadayam.';
+      else txt += ' Ən yaxın yer: ' + poi.n + (ty ? ' ' + ty[0] : '') + ', təxminən ' + Math.round(poi.d / 5) * 5 + ' metr məsafədə.';
+    }
+    if (c.gps && c.acc > 40) txt += ' GPS dəqiqliyi təxminən ' + Math.round(c.acc) + ' metrdir, bina içində dəqiqlik azalır.';
+    return txt;
+  }
+  window.fetch = function (url, init) {
+    var p = of.apply(this, arguments), heard = '';
+    try { if (String(url).indexOf('generativelanguage.googleapis.com') < 0 || !init || typeof init.body !== 'string' || init.body.indexOf('TASK:ROUTER') < 0) return p; heard = userText(init.body); } catch (e) { return p; }
+    var k = kinds(heard); if (!k.w && !k.l) return p;
+    return p.then(function (resp) {
+      if (!resp || !resp.ok) return resp;
+      return resp.clone().json().then(async function (j) {
+        var txt = j.candidates[0].content.parts.map(function (x) { return x.text || ''; }).join('').trim(), r = parseJ(txt);
+        if (!r) return resp;
+        var it = String(r.intent || 'none');
+        if (it === 'stop' || it === 'drive' || it === 'scan' || it === 'long') return resp;
+        var c = await getLoc(); if (!c) return resp;
+        var parts = [];
+        if (k.w) { var w = await weatherText(c, k.tom, k.now); if (w) parts.push(w); }
+        if (k.l) { var l = await placeText(c); if (l) parts.push(l); }
+        if (!parts.length) return resp;
+        r.intent = 'ask'; r.answer = parts.join(' '); r.steps = null; r.goal = null; r.drive = null; r.target = null; r.target_en = null; r.question = null;
+        j.candidates[0].content.parts = [{ text: JSON.stringify(r) }];
+        return new Response(JSON.stringify(j), { status: resp.status, statusText: resp.statusText, headers: { 'Content-Type': 'application/json' } });
+      }).catch(function () { return resp; });
+    });
+  };
+})();
+// ╚══ ⚪ SƏS SONU
+// #endregion
+</script>
+<script>
 
 
 
