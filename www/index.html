@@ -1160,7 +1160,9 @@
 // ╟──────────────────────────────────────────────────────────────────
 // 2026-11-21: istifadəçi tələbi: ekranda «Başlıq» + «Mətn» xanaları. Başlığa sual yazılır (məs. «Fuad Babayev kimdir?»), altına mətn. Robotun adını çəkib başlığa uyğun sual verəndə («Fuad Babayev kimdir», «Fuad Babayevi tanıyırsan») robot həmin mətnə baxıb cavab verir.
 // «➕» yeni başlıq+mətn cütü əlavə edir (istədiyin qədər), «🗑» silir (təsdiq soruşur). Yazdıqca avtomatik yadda qalır (localStorage `kb_v1`, bu telefonda).
-// Uyğunluq: başlıqdakı mənalı sözlərin HAMISI deyilən cümlədə olmalıdır (şəkilçi fərqi nəzərə alınmır: Babayev ~ Babayevi). Cavab: Gemini mətnə baxıb sualı qısa cavablayır (yalnız mətnə əsasən); alınmasa mətnin əvvəlini oxuyur.
+// 2026-11-21 (2): hər başlığın altında «＋ Başqa sual əlavə et»: eyni mətnə bir neçə sual bağlanır (məs. «Səni kim hazırlayıb?», «Səni kim yaradıb?», «Sənin qurucun kimdir?»). Bunlardan hər hansı biri deyiləndə robot eyni mətndən cavab verir. Söz kökü uyğunluğu genişləndi (hazırlayıb ~ hazırladı).
+// 2026-11-21 (3): kartın başlığında «🔒 Aç və yaz» / «✅ Bağla» düyməsi. Standart: BAĞLI (solğun, xanalar `disabled`, `pointer-events:none`), ekranı sürüşdürəndə təsadüfən mətnə girmir. Bağlı olanda da robot mətnləri oxuyur (uyğunluq/cavab kodu dəyişməyib). Hər açılışda bağlı başlayır.
+// Uyğunluq: başlıqdakı (və ya başqa sualdakı) mənalı sözlərin HAMISI deyilən cümlədə olmalıdır (şəkilçi fərqi nəzərə alınmır: Babayev ~ Babayevi). Cavab: Gemini mətnə baxıb sualı qısa cavablayır (yalnız mətnə əsasən); alınmasa mətnin əvvəlini oxuyur.
 // Qıfıllı koda toxunulmayıb: Gemini marşrutlaşdırıcısının (TASK:ROUTER) cavabı yoldan keçəndə niyyət «ask» edilir və «answer»-ə cavab yazılır (hava/yer qutusu kimi). Bu qutu ən sonda qurulur: başlıq uyğun gələndə digər yönləndirmələrdən üstündür (stop/hərəkət/otaq skanı/«look» istisna).
 (function () {
   var KEY = 'kb_v1', data = [];
@@ -1170,49 +1172,79 @@
   var STOP = /^(kim|kimdir|kimdi|nedir|nedi|ne|haqqinda|haqda|barede|melumat|ver|de|soyle|danis|oxu|ucun|nece|niye|neden|hansi|var|bax|gor|ve|ile|bir|bu|o|ki|mene|sen|taniyirsan|taniyirsiz|tanisan|bilirsen|bilirsiniz|olub|idi|imis|neceydi)$/;
   var MOVE = /\b(get|gel|gelin|yaxinlas|yaxinlasin|don|dondur|tap|axtar|cix|irele|geri|arxaya|saga|sola|stop)\b/;
   function toks(t) { return asc(t).split(' ').filter(function (w) { return w && !STOP.test(w); }); }
-  function same(a, b) { return a === b || (a.length >= 4 && b.length >= 4 && (a.indexOf(b) === 0 || b.indexOf(a) === 0)); }
+  function same(a, b) { if (a === b) return true; if (a.length < 4 || b.length < 4) return false; if (a.indexOf(b) === 0 || b.indexOf(a) === 0) return true; var k = 0; while (k < a.length && k < b.length && a.charAt(k) === b.charAt(k)) k++; return k >= 5; }
+  function titleScore(t, ht) {
+    var tt = toks(t); if (!tt.length) return 0; var score = 0;
+    for (var i = 0; i < tt.length; i++) { var ok = ht.some(function (h) { return same(h, tt[i]); }); if (!ok) return 0; score += tt[i].length; }
+    return score;
+  }
   function match(heard) {
     var ht = asc(heard).split(' ').filter(Boolean), best = null;
     data.forEach(function (e) {
-      if (!e || !e.t || !e.x || !String(e.x).trim()) return;
-      var tt = toks(e.t); if (!tt.length) return;
-      var score = 0;
-      for (var i = 0; i < tt.length; i++) { var ok = ht.some(function (h) { return same(h, tt[i]); }); if (!ok) return; score += tt[i].length; }
-      if (!best || score > best.s) best = { e: e, s: score };
+      if (!e || !e.x || !String(e.x).trim()) return;
+      var sc = 0, ts = [e.t].concat(Array.isArray(e.a) ? e.a : []);
+      ts.forEach(function (t) { if (t) sc = Math.max(sc, titleScore(t, ht)); });
+      if (sc && (!best || sc > best.s)) best = { e: e, s: sc };
     });
     return best ? best.e : null;
   }
   window.__kbMatch = function (h, d) { if (d) data = d; return match(h); };
   /* ---------- ekran ---------- */
   function mk(tag, css, txt) { var el = document.createElement(tag); if (css) el.style.cssText = css; if (txt != null) el.textContent = txt; return el; }
-  var list = null;
+  var list = null, add = null, tog = null, editing = false;      // editing=false: bağlı (solğun, toxunuşa cavab vermir), robot yenə oxuyur
+  var INP = 'flex:1;min-width:0;border:0;border-radius:8px;padding:8px;background:#0f172a;color:var(--text);font-size:14px;user-select:text;-webkit-user-select:text';
   function render() {
     if (!list) return; list.innerHTML = '';
     data.forEach(function (e, i) {
+      if (!Array.isArray(e.a)) e.a = [];
       var box = mk('div', 'margin-top:10px;padding-top:8px;' + (i ? 'border-top:1px solid #334155' : ''));
       var row = mk('div', 'display:flex;gap:6px;align-items:center');
-      var ti = mk('input', 'flex:1;min-width:0;border:0;border-radius:8px;padding:8px;background:#0f172a;color:var(--text);font-size:14px;font-weight:700;user-select:text;-webkit-user-select:text');
+      var ti = mk('input', INP + ';font-weight:700');
       ti.type = 'text'; ti.placeholder = 'Başlıq (məs. Fuad Babayev kimdir?)'; ti.value = e.t || ''; ti.autocomplete = 'off';
       ti.addEventListener('input', function () { e.t = ti.value; save(); });
       var del = mk('button', 'flex:0 0 42px;padding:8px', '🗑'); del.type = 'button'; del.title = 'Sil';
-      del.addEventListener('click', function () { if (!confirm('Bu başlıq və mətn silinsin?')) return; data.splice(i, 1); if (!data.length) data.push({ t: '', x: '' }); save(); render(); });
-      row.appendChild(ti); row.appendChild(del);
+      del.addEventListener('click', function () { if (!confirm('Bu başlıq və mətn silinsin?')) return; data.splice(i, 1); if (!data.length) data.push({ t: '', x: '', a: [] }); save(); render(); });
+      row.appendChild(ti); row.appendChild(del); box.appendChild(row);
+      e.a.forEach(function (al, k) {
+        var r2 = mk('div', 'display:flex;gap:6px;align-items:center;margin-top:6px');
+        var ai = mk('input', INP); ai.type = 'text'; ai.placeholder = 'Başqa sual (məs. Səni kim yaradıb?)'; ai.value = al || ''; ai.autocomplete = 'off';
+        ai.addEventListener('input', function () { e.a[k] = ai.value; save(); });
+        var ad = mk('button', 'flex:0 0 42px;padding:8px', '✖'); ad.type = 'button'; ad.title = 'Bu sualı sil';
+        ad.addEventListener('click', function () { e.a.splice(k, 1); save(); render(); });
+        r2.appendChild(ai); r2.appendChild(ad); box.appendChild(r2);
+      });
+      var more = mk('button', 'width:100%;margin-top:6px;padding:6px;font-size:12px', '＋ Başqa sual əlavə et (eyni mətn)'); more.type = 'button';
+      more.addEventListener('click', function () { e.a.push(''); save(); render(); try { var ins = list.children[i].querySelectorAll('input'); ins[ins.length - 1].focus(); } catch (x) {} });
+      box.appendChild(more);
       var ta = mk('textarea', 'display:block;width:100%;box-sizing:border-box;min-height:96px;margin-top:6px;border:0;border-radius:8px;padding:8px;background:#0f172a;color:var(--text);font:inherit;font-size:14px;resize:vertical;user-select:text;-webkit-user-select:text');
       ta.placeholder = 'Mətn bura yazılır (başlıqdakı sualın cavabı)'; ta.value = e.x || '';
       ta.addEventListener('input', function () { e.x = ta.value; save(); });
-      box.appendChild(row); box.appendChild(ta); list.appendChild(box);
+      box.appendChild(ta); list.appendChild(box);
     });
+    applyLock();
+  }
+  function applyLock() {
+    if (!list) return;
+    list.style.opacity = editing ? '1' : '0.4'; list.style.pointerEvents = editing ? '' : 'none';
+    Array.prototype.forEach.call(list.querySelectorAll('input,textarea,button'), function (el) { el.disabled = !editing; });
+    if (add) { add.disabled = !editing; add.style.opacity = editing ? '1' : '0.4'; add.style.pointerEvents = editing ? '' : 'none'; }
+    if (tog) tog.textContent = editing ? '✅ Bağla' : '🔒 Aç və yaz';
+    if (!editing) { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }
   }
   function build() {
     if (document.getElementById('kbPanel')) return;
     var anchor = document.getElementById('voicePanel'); if (!anchor || !anchor.parentNode) return;
-    data = load(); if (!data.length) data = [{ t: '', x: '' }];
+    data = load(); if (!data.length) data = [{ t: '', x: '', a: [] }];
     var card = mk('div', ''); card.className = 'card'; card.id = 'kbPanel';
-    card.appendChild(mk('b', 'font-size:13px', '📚 Mətn bazası: başlıq və mətn'));
-    card.appendChild(mk('div', 'font-size:11px;color:var(--muted);margin-top:4px', 'Başlığa sual yaz, altına cavab mətnini. Robotun adını çəkib həmin sualı verəndə robot mətnə baxıb cavab verəcək.'));
+    var head = mk('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px');
+    head.appendChild(mk('b', 'font-size:13px', '📚 Mətn bazası: başlıq və mətn'));
+    tog = mk('button', 'flex:0 0 auto;padding:4px 10px;font-size:12px', '🔒 Aç və yaz'); tog.type = 'button';
+    tog.addEventListener('click', function () { editing = !editing; applyLock(); });
+    head.appendChild(tog); card.appendChild(head);
+    card.appendChild(mk('div', 'font-size:11px;color:var(--muted);margin-top:4px', 'Yazmaq üçün «🔒 Aç və yaz» düyməsinə bas, bitəndə «✅ Bağla». Bağlı olanda solğundur, toxunuşa cavab vermir (ekranı sürüşdürəndə təsadüfən girmir), amma robot yenə də bu mətnlərdən cavab verir.'));
     list = mk('div', ''); card.appendChild(list);
-    var add = mk('button', 'width:100%;margin-top:10px', '➕ Yeni başlıq və mətn'); add.type = 'button'; add.className = 'primary';
-    add.addEventListener('click', function () { data.push({ t: '', x: '' }); save(); render(); var inp = list.querySelectorAll('input'); if (inp.length) { try { inp[inp.length - 1].focus(); } catch (e) {} } });
+    add = mk('button', 'width:100%;margin-top:10px', '➕ Yeni başlıq və mətn'); add.type = 'button'; add.className = 'primary';
+    add.addEventListener('click', function () { data.push({ t: '', x: '', a: [] }); save(); render(); var inp = list.querySelectorAll('input'); if (inp.length) { try { inp[inp.length - 1].focus(); } catch (e) {} } });
     card.appendChild(add);
     anchor.parentNode.insertBefore(card, anchor.nextSibling); render();
   }
